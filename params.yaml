@@ -1,0 +1,28 @@
+download:
+  ticker: AAPL
+  forms: ["10-K"]
+  after: "2024-01-01"
+  before: "2026-01-01"
+  user_agent_name: "NEU-DAMG7245-Fall26-Team1"
+  user_agent_email: "praveen.p@northeastern.edu"
+
+render:
+  page_format: Letter
+
+ocr:
+  min_chars: 50
+  junk_ratio: 0.3
+  dpi: 300
+
+tables:
+  min_rulings: 6
+  accept_score: 80
+
+layout:
+  model: "lp://efficientdet/PubLayNet"
+  score_threshold: 0.5
+  pad_pt: 8
+
+managed:
+  enabled: false
+  provider: ""

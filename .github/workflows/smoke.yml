@@ -1,0 +1,3 @@
+# TODO: implement CI smoke test
+name: smoke
+on: [pull_request]
