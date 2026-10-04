@@ -13,6 +13,7 @@ ocr:
   min_chars: 50
   junk_ratio: 0.3
   dpi: 300
+  image_coverage: 0.6
 
 tables:
   min_rulings: 6
