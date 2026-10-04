@@ -1,6 +1,6 @@
 """
-Part 1 - Per-page text extraction with pdfplumber and an OCR trigger
-(Tesseract OCR itself is added in the next step)
+Part 1 - Per-page text extraction with pdfplumber, OCR trigger and
+Tesseract OCR fallback
 
 Usage (DVC stage):
     python src/parse_text.py
@@ -8,9 +8,13 @@ Usage (DVC stage):
 Standalone / CI:
     python src/parse_text.py --input tests/fixtures --output data/parsed
 
-Outputs (per PDF):
+Outputs:
     {output}/{stem}_p{NNNN}.txt     one text file per page
     {output}/{stem}.words.jsonl     word boxes in PDF points, top-left origin
+    {output}/ocr_log.csv            one row per page: the OCR decision
+
+Needs the Tesseract binary. If it is not on PATH (common on Windows), set
+the TESSERACT_CMD environment variable to the full path of tesseract.exe.
 """
 
 from __future__ import annotations
@@ -18,15 +22,21 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 from pathlib import Path
 
 import pdfplumber
+import pytesseract
 import yaml
+from pytesseract import Output
 
 # pdfplumber tolerances (gap in points that still counts as one word / line)
 X_TOLERANCE = 1.5
 Y_TOLERANCE = 3
+
+# Tesseract settings: LSTM engine, one uniform block (good for statements)
+TESS_CONFIG = "--oem 1 --psm 6"
 
 # Junk tokens: unmapped glyphs like (cid:42), Unicode replacement chars,
 # or control characters. Normal symbols such as $ or em dashes are NOT junk.
@@ -111,8 +121,58 @@ def ocr_decision(text: str, page, ocr_params: dict) -> dict:
     }
 
 
-def parse_pdf(pdf_path: Path, out_dir: Path, doc_id: str, ocr_params: dict) -> int:
-    """Write per-page .txt files and one words.jsonl. Returns page count."""
+def run_ocr(page, dpi: int) -> tuple[str, list[dict], float | None]:
+    """
+    OCR one page with Tesseract.
+
+    Tesseract works in pixels of the rendered image, so every box is
+    converted back to PDF points: pt = px * 72 / dpi (top-left origin).
+    Returns (text, words, mean_confidence).
+    """
+    img = page.to_image(resolution=dpi).original  # PIL image
+    d = pytesseract.image_to_data(img, config=TESS_CONFIG, output_type=Output.DICT)
+    k = 72.0 / dpi
+
+    words: list[dict] = []
+    lines: dict[tuple, list[str]] = {}
+    for i, t in enumerate(d["text"]):
+        conf = float(d["conf"][i])
+        if not t.strip() or conf < 0:
+            continue
+        x, y, w, h = d["left"][i], d["top"][i], d["width"][i], d["height"][i]
+        words.append({
+            "text": t,
+            "bbox": [round(x * k, 2), round(y * k, 2),
+                     round((x + w) * k, 2), round((y + h) * k, 2)],
+            "conf": round(conf, 1),
+        })
+        key = (d["block_num"][i], d["par_num"][i], d["line_num"][i])
+        lines.setdefault(key, []).append(t)
+
+    text = "\n".join(" ".join(ws) for ws in lines.values())
+    mean_conf = (round(sum(w["conf"] for w in words) / len(words), 1)
+                 if words else None)
+    return text, words, mean_conf
+
+
+def check_tesseract() -> None:
+    """Fail early with a clear message if Tesseract cannot be found."""
+    cmd = os.environ.get("TESSERACT_CMD")
+    if cmd:
+        pytesseract.pytesseract.tesseract_cmd = cmd
+    try:
+        pytesseract.get_tesseract_version()
+    except pytesseract.TesseractNotFoundError as exc:
+        raise SystemExit(
+            "[ERROR] Tesseract not found. Install it and put it on PATH, or set "
+            "TESSERACT_CMD to the full path of tesseract.exe"
+        ) from exc
+
+
+def parse_pdf(pdf_path: Path, out_dir: Path, doc_id: str,
+              ocr_params: dict, log_rows: list[dict]) -> int:
+    """Write per-page .txt files and one words.jsonl; add one log row per
+    page. Pages that trigger the OCR rule are re-read with Tesseract."""
     stem = pdf_path.stem
     words_path = out_dir / f"{stem}.words.jsonl"
 
@@ -121,11 +181,36 @@ def parse_pdf(pdf_path: Path, out_dir: Path, doc_id: str, ocr_params: dict) -> i
         for page in pdf.pages:
             n = page.page_number  # 1-based
             text, words = extract_page(page)
-
             decision = ocr_decision(text, page, ocr_params)
+
+            engine, mean_conf, used_ocr = "pdfplumber", None, False
+            for w in words:
+                w["conf"] = None
+
+            if decision["triggered"]:
+                ocr_text, ocr_words, mean_conf = run_ocr(page, ocr_params["dpi"])
+                engine, used_ocr = "tesseract", True
+                text, words = ocr_text, ocr_words
+                if not text.strip():
+                    print(f"[WARN] {stem} p{n:04d}: OCR returned no text")
+
             print(f"       p{n:04d} chars={decision['n_chars']} "
                   f"junk={decision['junk_ratio']} img={decision['image_coverage']} "
-                  f"-> OCR={decision['triggered']} ({decision['reason']})")
+                  f"-> OCR={used_ocr} ({decision['reason']})"
+                  + (f" conf={mean_conf}" if used_ocr else ""))
+
+            log_rows.append({
+                "doc_id": doc_id,
+                "stem": stem,
+                "page": n,
+                "triggered": used_ocr,
+                "reason": decision["reason"],
+                "engine": engine,
+                "mean_conf": "" if mean_conf is None else mean_conf,
+                "n_chars": decision["n_chars"],
+                "junk_ratio": decision["junk_ratio"],
+                "image_coverage": decision["image_coverage"],
+            })
 
             (out_dir / f"{stem}_p{n:04d}.txt").write_text(
                 text, encoding="utf-8", newline="\n")
@@ -139,11 +224,22 @@ def parse_pdf(pdf_path: Path, out_dir: Path, doc_id: str, ocr_params: dict) -> i
                     "bbox": w["bbox"],
                     "units": "pt",
                     "origin": "top-left",
-                    "source": "pdfplumber",
+                    "source": engine,
+                    "ocr": used_ocr,
+                    "conf": w["conf"],
                 }
                 wf.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
         return len(pdf.pages)
+
+
+def write_ocr_log(log_rows: list[dict], path: Path) -> None:
+    fields = ["doc_id", "stem", "page", "triggered", "reason", "engine",
+              "mean_conf", "n_chars", "junk_ratio", "image_coverage"]
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(log_rows)
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +258,7 @@ def main() -> None:
     args = parser.parse_args()
 
     ocr_params = load_params(args.params)["ocr"]
+    check_tesseract()
     input_path = Path(args.input)
     out_dir = Path(args.output)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -176,12 +273,16 @@ def main() -> None:
         print(f"[ERROR] No PDFs found in {input_path}")
         return
 
+    log_rows: list[dict] = []
     for pdf_path in pdfs:
         doc_id = manifest.get(pdf_path.stem, pdf_path.stem)
         print(f"[INFO] {pdf_path.name} (doc_id={doc_id})")
-        n_pages = parse_pdf(pdf_path, out_dir, doc_id, ocr_params)
+        n_pages = parse_pdf(pdf_path, out_dir, doc_id, ocr_params, log_rows)
         print(f"[INFO] {pdf_path.name}: {n_pages} pages")
 
+    write_ocr_log(log_rows, out_dir / "ocr_log.csv")
+    n_ocr = sum(1 for r in log_rows if r["triggered"])
+    print(f"[INFO] OCR used on {n_ocr} of {len(log_rows)} pages -> ocr_log.csv")
     print("[INFO] Text extraction complete")
 
 
