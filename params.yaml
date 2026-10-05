@@ -21,8 +21,29 @@ ocr:
   tesseract_config: "--oem 1 --psm 6"
 
 tables:
-  min_rulings: 6
-  accept_score: 80
+  min_rulings: 6              # existing: this many long rules = "ruled" page, try lattice first
+  accept_score: 80            # existing: accuracy - whitespace_weight * whitespace
+  statements:
+    income: ["CONSOLIDATED STATEMENTS OF OPERATIONS"]
+    comprehensive_income: ["CONSOLIDATED STATEMENTS OF COMPREHENSIVE INCOME"]
+    balance: ["CONSOLIDATED BALANCE SHEETS"]
+    equity: ["CONSOLIDATED STATEMENTS OF SHAREHOLDERS"]
+    cash_flows: ["CONSOLIDATED STATEMENTS OF CASH FLOWS"]
+  title_top_lines: 6          # title must be in a page's first lines (skips table of contents)
+  min_numeric_tokens: 40      # a real statement page has many numbers
+  rule_min_len_pt: 100        # only rules this long count (ignores underlines under totals)
+  order_ruled: [lattice, network, stream]
+  order_borderless: [stream, network, lattice]
+  whitespace_weight: 0.5
+  min_rows: 5                 # fragment guard
+  min_cols: 3
+  min_coverage: 0.5           # table must hold at least half the page's numbers
+  max_label_merge: 0.2        # max share of labels ending in a number (shifted columns)
+  bakeoff_flavors: [lattice, stream, network, hybrid]
+  run_bakeoff: true
+  scale_words: {thousands: 1000, millions: 1000000, billions: 1000000000}
+  shares_pattern: "shares used|weighted.average.*shares|number of shares"
+  per_share_pattern: "per share|per-share"
 
 layout:
   model: "lp://efficientdet/PubLayNet"
