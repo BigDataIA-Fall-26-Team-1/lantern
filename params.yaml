@@ -9,11 +9,16 @@ download:
 render:
   page_format: Letter
 
+text:
+  x_tolerance: 1.5
+  y_tolerance: 3
+
 ocr:
   min_chars: 50
   junk_ratio: 0.3
   dpi: 300
   image_coverage: 0.6
+  tesseract_config: "--oem 1 --psm 6"
 
 tables:
   min_rulings: 6
