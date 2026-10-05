@@ -31,13 +31,6 @@ import pytesseract
 import yaml
 from pytesseract import Output
 
-# pdfplumber tolerances (gap in points that still counts as one word / line)
-X_TOLERANCE = 1.5
-Y_TOLERANCE = 3
-
-# Tesseract settings: LSTM engine, one uniform block (good for statements)
-TESS_CONFIG = "--oem 1 --psm 6"
-
 # Junk tokens: unmapped glyphs like (cid:42), Unicode replacement chars,
 # or control characters. Normal symbols such as $ or em dashes are NOT junk.
 JUNK = re.compile(r"\(cid:\d+\)|\ufffd|[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -67,16 +60,19 @@ def find_pdfs(input_path: Path) -> list[Path]:
     return sorted(input_path.glob("*.pdf"))
 
 
-def extract_page(page) -> tuple[str, list[dict]]:
-    """Text and word boxes from the PDF text layer."""
-    text = page.extract_text(x_tolerance=X_TOLERANCE, y_tolerance=Y_TOLERANCE) or ""
+def extract_page(page, text_params: dict) -> tuple[str, list[dict]]:
+    """Text and word boxes from the PDF text layer.
+    Tolerances (params.yaml text.*) are the gap in points that still counts
+    as the same word / line."""
+    x_tol, y_tol = text_params["x_tolerance"], text_params["y_tolerance"]
+    text = page.extract_text(x_tolerance=x_tol, y_tolerance=y_tol) or ""
     words = [
         {
             "text": w["text"],
             "bbox": [round(w["x0"], 2), round(w["top"], 2),
                      round(w["x1"], 2), round(w["bottom"], 2)],
         }
-        for w in page.extract_words(x_tolerance=X_TOLERANCE, y_tolerance=Y_TOLERANCE)
+        for w in page.extract_words(x_tolerance=x_tol, y_tolerance=y_tol)
     ]
     return text, words
 
@@ -121,7 +117,7 @@ def ocr_decision(text: str, page, ocr_params: dict) -> dict:
     }
 
 
-def run_ocr(page, dpi: int) -> tuple[str, list[dict], float | None]:
+def run_ocr(page, dpi: int, tess_config: str) -> tuple[str, list[dict], float | None]:
     """
     OCR one page with Tesseract.
 
@@ -130,7 +126,7 @@ def run_ocr(page, dpi: int) -> tuple[str, list[dict], float | None]:
     Returns (text, words, mean_confidence).
     """
     img = page.to_image(resolution=dpi).original  # PIL image
-    d = pytesseract.image_to_data(img, config=TESS_CONFIG, output_type=Output.DICT)
+    d = pytesseract.image_to_data(img, config=tess_config, output_type=Output.DICT)
     k = 72.0 / dpi
 
     words: list[dict] = []
@@ -170,7 +166,7 @@ def check_tesseract() -> None:
 
 
 def parse_pdf(pdf_path: Path, out_dir: Path, doc_id: str,
-              ocr_params: dict, log_rows: list[dict]) -> int:
+              text_params: dict, ocr_params: dict, log_rows: list[dict]) -> int:
     """Write per-page .txt files and one words.jsonl; add one log row per
     page. Pages that trigger the OCR rule are re-read with Tesseract."""
     stem = pdf_path.stem
@@ -180,7 +176,7 @@ def parse_pdf(pdf_path: Path, out_dir: Path, doc_id: str,
             open(words_path, "w", encoding="utf-8", newline="\n") as wf:
         for page in pdf.pages:
             n = page.page_number  # 1-based
-            text, words = extract_page(page)
+            text, words = extract_page(page, text_params)
             decision = ocr_decision(text, page, ocr_params)
 
             engine, mean_conf, used_ocr = "pdfplumber", None, False
@@ -188,7 +184,8 @@ def parse_pdf(pdf_path: Path, out_dir: Path, doc_id: str,
                 w["conf"] = None
 
             if decision["triggered"]:
-                ocr_text, ocr_words, mean_conf = run_ocr(page, ocr_params["dpi"])
+                ocr_text, ocr_words, mean_conf = run_ocr(
+                    page, ocr_params["dpi"], ocr_params["tesseract_config"])
                 engine, used_ocr = "tesseract", True
                 text, words = ocr_text, ocr_words
                 if not text.strip():
@@ -257,7 +254,8 @@ def main() -> None:
                         help="manifest.csv (default: <input>/manifest.csv)")
     args = parser.parse_args()
 
-    ocr_params = load_params(args.params)["ocr"]
+    params = load_params(args.params)
+    text_params, ocr_params = params["text"], params["ocr"]
     check_tesseract()
     input_path = Path(args.input)
     out_dir = Path(args.output)
@@ -277,7 +275,7 @@ def main() -> None:
     for pdf_path in pdfs:
         doc_id = manifest.get(pdf_path.stem, pdf_path.stem)
         print(f"[INFO] {pdf_path.name} (doc_id={doc_id})")
-        n_pages = parse_pdf(pdf_path, out_dir, doc_id, ocr_params, log_rows)
+        n_pages = parse_pdf(pdf_path, out_dir, doc_id, text_params, ocr_params, log_rows)
         print(f"[INFO] {pdf_path.name}: {n_pages} pages")
 
     write_ocr_log(log_rows, out_dir / "ocr_log.csv")
