@@ -1,1 +1,14 @@
 # Pinned from a Linux environment after packages are installed
+camelot-py==2.0.0
+dvc==3.67.1
+dvc-s3==3.3.0
+numpy==2.4.6
+opencv-python-headless==5.0.0.93
+pandas==3.0.6
+pdfplumber==0.11.10
+playwright==1.63.0
+pypdfium2==5.14.0
+pytesseract==0.3.13
+pytest==9.1.1
+PyYAML==6.0.3
+sec-edgar-downloader==5.1.0
