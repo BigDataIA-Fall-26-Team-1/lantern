@@ -1,0 +1,7 @@
+[core]
+    remote = public
+['remote "store"']
+    url = s3://lantern-dvc-team1-2026/dvc
+    region = us-east-2
+['remote "public"']
+    url = https://lantern-dvc-team1-2026.s3.us-east-2.amazonaws.com/dvc
