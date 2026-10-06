@@ -48,8 +48,26 @@ tables:
 
 layout:
   model: "lp://efficientdet/PubLayNet"
-  score_threshold: 0.5
+  score_threshold: 0.25             # your corrected value
   pad_pt: 8
+  model_name: "tf_efficientdet_d0"
+  hf_repo: "layoutparser/efficientdet"
+  hf_file: "PubLayNet/tf_efficientdet_d0/publaynet-tf_efficientdet_d0.pth.tar"
+  table_min_cols: 2                 # layout tables can be narrow (label + one value column)
+  table_min_coverage: 0.3           # TOC and note tables hold numbers in the label column
+  table_region_overlap: 0.8         # a returned table must lie this much inside the asked region
+  table_snap_pt: 40                 # pull row labels within this distance into the table
+  text_snap_pt: 15                  # pull clipped words within this distance into a text block
+  dpi: 150                          # page image resolution for the detector
+  duplicate_cover_ratio: 0.6        # drop a box this much covered by better boxes of the same type
+  inside_table_ratio: 0.8           # drop a non-table box this much inside a table
+  full_width_ratio: 0.6             # wider than this share of the page = spans both columns
+  table_min_rows: 2                 # layout tables can be small (Part 2 statements use min_rows)
+  fallback_y_tol_pt: 3              # words within this vertical gap are on one line
+  fallback_word_gap_pt: 20          # a bigger horizontal gap starts a new column
+  fallback_line_gap_pt: 6           # lines this close merge into one fallback block
+  fallback_min_chars: 3             # ignore tiny leftovers (page numbers)
+  tesseract_config: "--oem 1 --psm 6"
 
 managed:
   enabled: false
