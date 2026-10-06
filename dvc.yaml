@@ -32,3 +32,14 @@ stages:
       - ocr
     outs:
       - data/parsed
+
+
+  tables:
+    cmd: python src/tables.py --input data/rendered --output data/tables
+    deps:
+      - src/tables.py
+      - data/rendered
+    params:
+      - tables
+    outs:
+      - data/tables
