@@ -1,6 +1,6 @@
 doc_id,stem,page,statement,method,n_tables,n_rows,n_cols,accuracy,whitespace_raw,whitespace,coverage,label_merge,score,valid_shape,seconds,error
-statement,statement,1,income,camelot-lattice,6,5,3,100.0,0.0,0.0,0.152,1.0,100.0,False,0.683,
-statement,statement,1,income,camelot-stream,1,27,4,99.64,47.09,18.52,0.909,0.0,90.38,True,0.043,
-statement,statement,1,income,camelot-network,1,22,3,100.0,42.42,3.03,0.606,1.0,98.48,False,0.059,
-statement,statement,1,income,camelot-hybrid,6,5,3,100.0,0.0,0.0,0.152,1.0,100.0,False,0.394,
-statement,statement,1,income,pdfplumber-text,1,32,9,,,52.43,0.909,0.0,,True,0.144,
+statement,statement,1,income,camelot-lattice,6,5,3,100.0,0.0,0.0,0.152,1.0,100.0,False,0.59,
+statement,statement,1,income,camelot-stream,1,27,4,99.64,47.09,18.52,0.909,0.0,90.38,True,0.068,
+statement,statement,1,income,camelot-network,1,22,3,100.0,42.42,3.03,0.606,1.0,98.48,False,0.05,
+statement,statement,1,income,camelot-hybrid,6,5,3,100.0,0.0,0.0,0.152,1.0,100.0,False,0.416,
+statement,statement,1,income,pdfplumber-text,1,32,9,,,52.43,0.909,0.0,,True,0.194,
