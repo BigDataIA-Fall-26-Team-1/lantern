@@ -1,2 +1,2 @@
 doc_id,stem,page,statement,decision,method,ruled,ruling_lines,order,n_rows,n_cols,accuracy,whitespace,coverage,label_merge,score,money_scale,shares_scale,bbox,raw_csv,norm_csv
-statement,statement,1,income,accepted,camelot-stream,False,2,stream>network>lattice,27,4,99.64,18.52,0.909,0.0,90.38,1000000,1000,"[-3.0, 102.79, 614.45, 527.16]",statement_p0001_income.raw.csv,statement_p0001_income.norm.csv
+statement,statement,1,income,accepted,camelot-stream,False,2,stream>network>lattice,27,4,99.64,18.52,0.909,0.0,90.38,1000000,1000,"[0.0, 102.79, 612.0, 527.16]",statement_p0001_income.raw.csv,statement_p0001_income.norm.csv

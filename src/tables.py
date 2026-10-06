@@ -35,8 +35,9 @@ import yaml
 # A numeric token: 1,234  (1,234)  $391,035  12.5  2025
 NUM_TOKEN = re.compile(r"\(?\$?\d[\d,]*\.?\d*\)?")
 YEAR = re.compile(r"^(19|20)\d{2}$")
-# Footnote markers only at the END of a cell: (a)  *  [1]
-FOOTNOTE = re.compile(r"\s*(\([a-z]\)|\*+|\[\d+\])$")
+# Footnote markers only at the END of a cell: (a)  *  [1]  and (1) right after a number.
+# The lookbehind keeps a standalone "(5)" as negative 5.
+FOOTNOTE = re.compile(r"(?<=[\d)])\s*\(\d\)$|\s*(\([a-z]\)|\*+|\[\d+\])$")
 # hyphen, en dash, em dash, minus sign
 DASHES = {"-", "\u2013", "\u2014", "\u2212"}
 
@@ -97,6 +98,7 @@ def scan_statement_pages(pdf_path: Path, tp: dict) -> list[dict]:
                         "page": page.page_number,
                         "statement": key,
                         "height": float(page.height),
+                        "width": float(page.width),
                         "text": text,
                         "ruling_lines": count_ruling_lines(page, tp["rule_min_len_pt"]),
                         "n_numeric": n_numeric,
@@ -217,6 +219,8 @@ def extract_best(pdf_path: Path, hit: dict, tp: dict) -> dict:
 
     for flavor in order:
         tables, _, err = run_camelot(pdf_path, hit["page"], flavor)
+        if err:
+            print(f"[WARN] p{hit['page']:04d} camelot-{flavor} failed: {err}")
         for t in tables:
             df = clean_df(t.df)
             tried.append({"flavor": flavor, "table": t, "df": df,
@@ -234,13 +238,18 @@ def extract_best(pdf_path: Path, hit: dict, tp: dict) -> dict:
     return {"decision": "no_valid_table", "ruled": ruled, "order": order}
 
 
-def bbox_top_left(table, page_height: float) -> list[float] | None:
-    """Camelot bbox is (x1, y1, x2, y2) bottom-left. Flip to [x0, top, x1, bottom]."""
+def bbox_top_left(table, page_width: float, page_height: float) -> list[float] | None:
+    """
+    Camelot bbox is (x1, y1, x2, y2) bottom-left. Flip to [x0, top, x1, bottom]
+    top-left, and clamp to the page (stream can report a few points outside it).
+    """
     b = getattr(table, "_bbox", None)
     if not b:
         return None
     x1, y1, x2, y2 = b
-    return [round(x1, 2), round(page_height - y2, 2), round(x2, 2), round(page_height - y1, 2)]
+    x0, x1 = max(0.0, x1), min(page_width, x2)
+    top, bottom = max(0.0, page_height - y2), min(page_height, page_height - y1)
+    return [round(x0, 2), round(top, 2), round(x1, 2), round(bottom, 2)]
 
 
 # ---------------------------------------------------------------------------
@@ -250,8 +259,15 @@ def bbox_top_left(table, page_height: float) -> list[float] | None:
 def to_number(raw: str) -> tuple[float | None, str]:
     """
     '$ (1,234)' -> -1234 ; dash -> 0 ; '12.5%' -> 12.5 (pct) ; text -> None.
-    Footnote markers are stripped only when they trail a value.
     Returns (value, unit) where unit is 'num' or 'pct'.
+
+    Decisions:
+      - Footnote markers are stripped only when they trail a value:
+        '1,234(1)' -> 1234, '1,234 (a)' -> 1234, '1,234*' -> 1234.
+      - A lone '(1)' is read as -1 (a negative number), not a footnote.
+      - '(565' with a missing closing parenthesis is read as -565
+        (pdfplumber dropped the ')' on the fixture).
+      - Percentages are returned unscaled with unit 'pct': '12%' -> (12.0, 'pct').
     """
     s = (raw or "").strip()
     if not s:
@@ -260,9 +276,9 @@ def to_number(raw: str) -> tuple[float | None, str]:
     s = s.replace("$", "").replace(",", "").replace(" ", "")
     if s in DASHES:
         return 0.0, "num"
-        # '(565)' is negative; so is '(565' when an extractor drops the closing parenthesis
-        neg = s.startswith("(")
-        s = s.strip("()")
+    # '(565)' is negative; so is '(565' when an extractor drops the closing parenthesis
+    neg = s.startswith("(")
+    s = s.strip("()")
     if s[:1] in DASHES:
         neg, s = True, s[1:]
     unit = "pct" if s.endswith("%") else "num"
@@ -408,16 +424,18 @@ def main() -> None:
             if res["decision"] != "no_valid_table":
                 base = f"{stem}_p{hit['page']:04d}_{hit['statement']}"
                 raw_path, norm_path = out_dir / f"{base}.raw.csv", out_dir / f"{base}.norm.csv"
-                res["df"].to_csv(raw_path, index=False, header=False, encoding="utf-8")
+                res["df"].to_csv(raw_path, index=False, header=False, encoding="utf-8",
+                                 lineterminator="\n")
                 norm, scales = normalize_df(res["df"], hit["text"], tp)
-                norm.to_csv(norm_path, index=False, header=False, encoding="utf-8")
+                norm.to_csv(norm_path, index=False, header=False, encoding="utf-8",
+                            lineterminator="\n")
                 row.update({
                     "method": f"camelot-{res['flavor']}",
                     "n_rows": res["n_rows"], "n_cols": res["n_cols"],
                     "accuracy": res["accuracy"], "whitespace": res["whitespace"],
                     "coverage": res["coverage"], "label_merge": res["label_merge"],
                     "score": res["score"], **scales,
-                    "bbox": json.dumps(bbox_top_left(res["table"], hit["height"])),
+                    "bbox": json.dumps(bbox_top_left(res["table"], hit["width"], hit["height"])),
                     "raw_csv": raw_path.name, "norm_csv": norm_path.name,
                 })
 
