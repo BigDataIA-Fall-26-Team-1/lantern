@@ -78,6 +78,16 @@ def count_ruling_lines(page, min_len_pt: float) -> int:
     return n
 
 
+def is_title_line(line: str, pattern: str, max_extra: int) -> bool:
+    """
+    The title must start the line and be nearly all of it. This accepts
+    "CONSOLIDATED STATEMENTS OF SHAREHOLDERS' EQUITY" for the pattern
+    "CONSOLIDATED STATEMENTS OF SHAREHOLDERS", but rejects index lines like
+    "Consolidated Statements of Operations for the years ended ... 29".
+    """
+    return line.startswith(pattern) and len(line) - len(pattern) <= max_extra
+
+
 def scan_statement_pages(pdf_path: Path, tp: dict) -> list[dict]:
     """
     A page is a statement page when a statement title appears in its first
@@ -88,12 +98,13 @@ def scan_statement_pages(pdf_path: Path, tp: dict) -> list[dict]:
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
             text = page.extract_text() or ""
-            head = "\n".join(text.splitlines()[: tp["title_top_lines"]]).upper()
+            head = [ln.strip().upper() for ln in text.splitlines()[: tp["title_top_lines"]]]
             n_numeric = len(NUM_TOKEN.findall(text))
             if n_numeric < tp["min_numeric_tokens"]:
                 continue
             for key, patterns in tp["statements"].items():
-                if any(p.upper() in head for p in patterns):
+                if any(is_title_line(ln, p.upper(), tp["title_max_extra_chars"])
+                       for ln in head for p in patterns):
                     hits.append({
                         "page": page.page_number,
                         "statement": key,
@@ -128,9 +139,39 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     """Strip cells, drop empty rows and columns that only hold '$' or nothing."""
     df = df.map(lambda v: "" if v is None else str(v).replace("\n", " ").strip())
     df = df[[c for c in df.columns if not df[c].isin(["", "$"]).all()]]
+    # a value column with no digits at all is a '$' column that also caught
+    # the caption text; drop it (column 0, the labels, is always kept)
+    df = df[[c for i, c in enumerate(df.columns)
+             if i == 0 or df[c].str.contains(r"\d", regex=True).any()]]
     df = df[~(df == "").all(axis=1)].reset_index(drop=True)
     df.columns = range(df.shape[1])
-    return df
+    return merge_label_continuations(df)
+
+
+def merge_label_continuations(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Join a label that wraps onto a second line, e.g.
+      'Common stock ... 50,400,000 shares authorized;'            (no values)
+      '14,773,260 and 15,116,786 shares issued ..., respectively'  93,568  83,276
+    becomes one row with the full label and the values. Only merges when the
+    first line has no values and ends with ';' or ',' and the second line
+    starts with a lowercase letter or a digit, so section headers such as
+    'Shareholders' equity:' are never merged.
+    """
+    if df.shape[1] < 2 or df.empty:
+        return df
+    out: list[list[str]] = []
+    for row in df.values.tolist():
+        if out:
+            prev = out[-1]
+            first = row[0][:1]
+            if (prev[0] and all(c == "" for c in prev[1:])
+                    and prev[0].rstrip().endswith((";", ","))
+                    and first and (first.islower() or first.isdigit())):
+                out[-1] = [f"{prev[0].rstrip()} {row[0].strip()}"] + row[1:]
+                continue
+        out.append(row)
+    return pd.DataFrame(out, columns=range(df.shape[1]))
 
 
 LABEL_ENDS_IN_NUMBER = re.compile(r"\d[\d,]*\)?$")
