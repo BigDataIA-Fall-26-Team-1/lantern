@@ -260,8 +260,9 @@ def to_number(raw: str) -> tuple[float | None, str]:
     s = s.replace("$", "").replace(",", "").replace(" ", "")
     if s in DASHES:
         return 0.0, "num"
-    neg = s.startswith("(") and s.endswith(")")
-    s = s.strip("()")
+        # '(565)' is negative; so is '(565' when an extractor drops the closing parenthesis
+        neg = s.startswith("(")
+        s = s.strip("()")
     if s[:1] in DASHES:
         neg, s = True, s[1:]
     unit = "pct" if s.endswith("%") else "num"
