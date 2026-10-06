@@ -30,7 +30,8 @@ tables:
     equity: ["CONSOLIDATED STATEMENTS OF SHAREHOLDERS"]
     cash_flows: ["CONSOLIDATED STATEMENTS OF CASH FLOWS"]
   title_top_lines: 6          # title must be in a page's first lines (skips table of contents)
-  min_numeric_tokens: 40      # a real statement page has many numbers
+  min_numeric_tokens: 20      # was 40; comprehensive income is a short statement
+  title_max_extra_chars: 15   # title must be nearly the whole line (rejects index pages)
   rule_min_len_pt: 100        # only rules this long count (ignores underlines under totals)
   order_ruled: [lattice, network, stream]
   order_borderless: [stream, network, lattice]
