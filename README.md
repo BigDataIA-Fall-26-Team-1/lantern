@@ -22,7 +22,14 @@ pytest -q
 
 ## DVC Remote Access
 
-TODO
+The default remote is `public`, a read-only https URL, so `dvc pull` works
+without any credentials.
+ 
+To push data you need write access: get the AWS key from the team, then run
+`dvc remote default --local store` and set the key with
+`dvc remote modify --local store access_key_id ...` and
+`dvc remote modify --local store secret_access_key ...`.
+These settings go into `.dvc/config.local`, which is never committed.
 
 ## Expected Run Times
 

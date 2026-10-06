@@ -1,6 +1,10 @@
 .env
 .venv/
 __pycache__/
-data/
 *.pyc
 .DS_Store
+ 
+# data is tracked by DVC, not Git. Keep the DVC pointer files.
+data/*
+!data/*.dvc
+!data/.gitignore
