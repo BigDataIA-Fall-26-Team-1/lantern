@@ -1,0 +1,73 @@
+schema: '2.0'
+stages:
+  download:
+    cmd: python src/download.py --output data/raw
+    deps:
+    - path: src/download.py
+      hash: md5
+      md5: f3c2b4e11e59408862f2b68153805e13
+      size: 5437
+    params:
+      params.yaml:
+        download.after: '2024-01-01'
+        download.before: '2026-01-01'
+        download.forms:
+        - 10-K
+        download.ticker: AAPL
+    outs:
+    - path: data/raw
+      hash: md5
+      md5: 9f9f4e754120a177f3fd21d3b586085b.dir
+      size: 37348782
+      nfiles: 181
+  render:
+    cmd: python src/render.py --input data/raw --output data/rendered
+    deps:
+    - path: data/raw
+      hash: md5
+      md5: 9f9f4e754120a177f3fd21d3b586085b.dir
+      size: 37348782
+      nfiles: 181
+    - path: src/render.py
+      hash: md5
+      md5: 9ab0217f285a880ef91c9e8953f62919
+      size: 7592
+    params:
+      params.yaml:
+        download.ticker: AAPL
+        render.page_format: Letter
+    outs:
+    - path: data/rendered
+      hash: md5
+      md5: aeecdd5e3b8417e02d7a02b5615fa96f.dir
+      size: 1106429
+      nfiles: 3
+  parse_pdfplumber:
+    cmd: python src/parse_text.py --input data/rendered --output data/parsed
+    deps:
+    - path: data/rendered
+      hash: md5
+      md5: aeecdd5e3b8417e02d7a02b5615fa96f.dir
+      size: 1106429
+      nfiles: 3
+    - path: src/parse_text.py
+      hash: md5
+      md5: 241a0c2f4e235f1f2187eb8de6e7814b
+      size: 10662
+    params:
+      params.yaml:
+        ocr:
+          min_chars: 50
+          junk_ratio: 0.3
+          dpi: 300
+          image_coverage: 0.6
+          tesseract_config: --oem 1 --psm 6
+        text:
+          x_tolerance: 1.5
+          y_tolerance: 3
+    outs:
+    - path: data/parsed
+      hash: md5
+      md5: 8052a8d2e8f4f4c7a18bf2f900b00525.dir
+      size: 14171753
+      nfiles: 124

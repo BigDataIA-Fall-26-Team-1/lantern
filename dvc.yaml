@@ -1,0 +1,34 @@
+stages:
+  download:
+    cmd: python src/download.py --output data/raw
+    deps:
+      - src/download.py
+    params:
+      - download.ticker
+      - download.forms
+      - download.after
+      - download.before
+    outs:
+      - data/raw
+ 
+  render:
+    cmd: python src/render.py --input data/raw --output data/rendered
+    deps:
+      - src/render.py
+      - data/raw
+    params:
+      - download.ticker
+      - render.page_format
+    outs:
+      - data/rendered
+ 
+  parse_pdfplumber:
+    cmd: python src/parse_text.py --input data/rendered --output data/parsed
+    deps:
+      - src/parse_text.py
+      - data/rendered
+    params:
+      - text
+      - ocr
+    outs:
+      - data/parsed
