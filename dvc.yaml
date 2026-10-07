@@ -55,3 +55,16 @@ stages:
       - docling
     outs:
       - data/docling
+  layout:
+    cmd: python src/layout.py --input data/rendered --output data/layout --figures data/figures
+    deps:
+      - src/layout.py
+      - src/tables.py
+      - data/rendered
+    params:
+      - layout
+      - tables
+      - ocr.dpi
+    outs:
+      - data/layout
+      - data/figures
