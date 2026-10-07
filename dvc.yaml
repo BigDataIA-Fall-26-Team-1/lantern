@@ -44,6 +44,17 @@ stages:
     outs:
       - data/tables
 
+
+  parse_docling:
+    cmd: python -m src.docling_parse --input data/rendered --output data/docling --raw data/raw
+    deps:
+      - src/docling_parse.py
+      - data/rendered
+      - data/raw
+    params:
+      - docling
+    outs:
+      - data/docling
   layout:
     cmd: python src/layout.py --input data/rendered --output data/layout --figures data/figures
     deps:
