@@ -82,6 +82,8 @@ def test_text_record_without_table_validates():
     ("source_path", "C:\\Users\\x\\file.pdf"),
     ("source_path", "/Users/x/file.pdf"),
     ("sha256", "abc"),
+    ("detector_score", 1.7),
+    ("figure_path", "C:\\figs\\a.png"),
 ])
 def test_bad_field_is_rejected(field, value):
     with pytest.raises(ValidationError):
@@ -122,3 +124,16 @@ def test_write_jsonl_validates_and_writes_lf(tmp_path):
     with pytest.raises(ValidationError):
         write_jsonl([GOOD, changed(cik="1")], tmp_path / "bad.jsonl")
     assert not (tmp_path / "bad.jsonl").exists()     # nothing written when a record is bad
+
+
+def test_extra_provenance_fields_are_optional_and_always_written():
+    rec = changed(detector="tf_efficientdet_d0", detector_score=0.91, figure_path=None)
+    out = json.loads(Record.model_validate(rec).model_dump_json(by_alias=True))
+    assert out["detector"] == "tf_efficientdet_d0" and out["figure_path"] is None
+    bare = json.loads(Record.model_validate(GOOD).model_dump_json(by_alias=True))
+    assert list(bare) == list(out) == record_keys()      # same keys whether set or not
+
+
+def test_table_status_field_is_allowed():
+    t = dict(GOOD["table"], status="best_below_threshold")
+    Record.model_validate(changed(table=t))
