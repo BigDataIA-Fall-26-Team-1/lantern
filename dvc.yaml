@@ -33,7 +33,6 @@ stages:
     outs:
       - data/parsed
 
-
   tables:
     cmd: python src/tables.py --input data/rendered --output data/tables
     deps:
@@ -43,7 +42,6 @@ stages:
       - tables
     outs:
       - data/tables
-
 
   parse_docling:
     cmd: python -m src.docling_parse --input data/rendered --output data/docling --raw data/raw
@@ -55,6 +53,7 @@ stages:
       - docling
     outs:
       - data/docling
+
   layout:
     cmd: python src/layout.py --input data/rendered --output data/layout --figures data/figures
     deps:
