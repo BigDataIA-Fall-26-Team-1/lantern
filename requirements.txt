@@ -1,7 +1,7 @@
 # Pinned from a Linux environment after packages are installed
 --extra-index-url https://download.pytorch.org/whl/cpu
 effdet==0.4.1
-huggingface_hub==2.1.1
+huggingface_hub==1.33.0
 layoutparser==0.3.4
 pycocotools==2.0.11
 timm==1.0.30
