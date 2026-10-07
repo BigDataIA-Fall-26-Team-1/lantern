@@ -1,5 +1,9 @@
 # Pinned from a Linux environment after packages are installed
 camelot-py==2.0.0
+docling==2.134.0
+docling-core==2.100.0
+docling-ibm-models==4.0.3
+docling-parse==7.22.2
 dvc==3.67.1
 dvc-s3==3.3.0
 numpy==2.4.6
@@ -13,3 +17,5 @@ pytesseract==0.3.13
 pytest==9.1.1
 PyYAML==6.0.3
 sec-edgar-downloader==5.1.0
+torch==2.14.1
+torchvision==0.29.1

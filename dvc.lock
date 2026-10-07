@@ -134,3 +134,33 @@ stages:
       md5: 97bd0b285c54dc5e3fff61c9c742c97a.dir
       size: 40732
       nfiles: 22
+  parse_docling:
+    cmd: python -m src.docling_parse --input data/rendered --output data/docling
+      --raw data/raw
+    deps:
+    - path: data/raw
+      hash: md5
+      md5: 9f9f4e754120a177f3fd21d3b586085b.dir
+      size: 37348782
+      nfiles: 181
+    - path: data/rendered
+      hash: md5
+      md5: aeecdd5e3b8417e02d7a02b5615fa96f.dir
+      size: 1106429
+      nfiles: 3
+    - path: src/docling_parse.py
+      hash: md5
+      md5: ddf94b187775cb3a1b774f7ca69480a4
+      size: 11474
+    params:
+      params.yaml:
+        docling:
+          do_ocr: false
+          table_mode: accurate
+          html_stem: AAPL_10K_20240928
+    outs:
+    - path: data/docling
+      hash: md5
+      md5: 0a9f1afa0932dd8597e0c0f8b00ff3af.dir
+      size: 18757654
+      nfiles: 294
