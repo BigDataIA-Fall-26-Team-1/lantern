@@ -37,6 +37,9 @@ from src.tables import normalize_df
 
 # "Item 1.", "Item 1A.", "Item 7 -" ... at the start of a short heading line
 ITEM = re.compile(r"^\s*item\s+(\d{1,2}[a-c]?)\s*[.:\u2013\u2014-]", re.IGNORECASE)
+# a heading Part 3 split in two: an "Item"-only block next to "16. Form 10-K Summary"
+ITEM_WORD = re.compile(r"^\s*item\s*$", re.IGNORECASE)
+ITEM_REST = re.compile(r"^\s*(\d{1,2}[a-c]?)\s*[.:\u2013\u2014-]\s*\S", re.IGNORECASE)
 TABLE_STATUSES_WITH_OBJECT = {"accepted", "best_below_threshold"}
 
 
@@ -152,17 +155,29 @@ def table_object(block: dict, page_text: str, tp: dict) -> dict | None:
 # records
 # ---------------------------------------------------------------------------
 
-def item_label(block: dict, max_chars: int) -> tuple[str, str] | None:
-    """('Item 7', heading text) if this block is a 10-K/10-Q Item heading."""
+def same_line(a: list[float], b: list[float]) -> bool:
+    """True if two boxes share most of their vertical extent (same text line)."""
+    overlap = min(a[3], b[3]) - max(a[1], b[1])
+    return overlap > 0.5 * min(a[3] - a[1], b[3] - b[1])
+
+
+def item_label(block: dict, max_chars: int, item_words: list[dict]) -> tuple[str, str, str | None] | None:
+    """('Item 7', heading text, id of an 'Item' fragment block or None) if this block is an Item heading."""
     if block.get("type") not in ("Title", "Text"):
         return None                       # never from Table blocks (e.g. the table of contents)
     text = (block.get("text") or "").strip()
     if not text or len(text) > max_chars:
         return None
     m = ITEM.match(text)
-    if not m:
-        return None
-    return f"Item {m.group(1).upper()}", text.splitlines()[0].strip()
+    if m:
+        return f"Item {m.group(1).upper()}", text.splitlines()[0].strip(), None
+    m = ITEM_REST.match(text)
+    if m:
+        for w in item_words:              # "Item" on the same line, left of "16. ..."
+            starts_first = w["bbox"][0] <= block["bbox"][0] + 5 and w["bbox"][2] < block["bbox"][2]
+            if same_line(w["bbox"], block["bbox"]) and starts_first:
+                return f"Item {m.group(1).upper()}", f"Item {text.splitlines()[0].strip()}", w["block_id"]
+    return None
 
 
 def build_records(stem, blocks, man, fiscal, pdf_rel, sha, parsed_dir, params):
@@ -177,14 +192,21 @@ def build_records(stem, blocks, man, fiscal, pdf_rel, sha, parsed_dir, params):
             page_text_cache[n] = p.read_text(encoding="utf-8") if p.exists() else ""
         return page_text_cache[n]
 
-    records, headings, current_item = [], {}, None
+    item_words: dict[int, list[dict]] = {}
+    for b in blocks:
+        if b.get("type") in ("Title", "Text") and ITEM_WORD.match(b.get("text") or ""):
+            item_words.setdefault(b["page"], []).append(b)
+
+    records, headings, current_item, fragments = [], {}, None, {}
     for b in sorted(blocks, key=lambda x: (x["page"], x["order"])):
         if b.get("doc_id") and b["doc_id"] != man["accession"]:
             raise ValueError(f"{b['block_id']}: doc_id {b['doc_id']} != manifest accession {man['accession']}")
-        hit = item_label(b, ep["item_heading_max_chars"])
+        hit = item_label(b, ep["item_heading_max_chars"], item_words.get(b["page"], []))
         if hit:
             current_item = hit[0]
             headings.setdefault(current_item, (hit[1], b["block_id"]))
+            if hit[2]:
+                fragments[hit[2]] = current_item
         section = current_item or b.get("section")
 
         btype = b["type"]
@@ -230,7 +252,10 @@ def build_records(stem, blocks, man, fiscal, pdf_rel, sha, parsed_dir, params):
             "detector_score": b.get("score"),
             "figure_path": b.get("figure_path"),
         })
-    return records, headings
+    for r in records:                      # an "Item" fragment belongs to the heading it completes
+        if r["block_id"] in fragments:
+            r["section"] = fragments[r["block_id"]]
+    return records, headings, set(fragments)
 
 
 # ---------------------------------------------------------------------------
@@ -249,11 +274,23 @@ def md_table(raw: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
-def is_footer(rec: dict, pattern: re.Pattern) -> bool:
-    return rec["block_type"] == "Text" and bool(pattern.search((rec["text"] or "").strip()))
+def is_footer(rec: dict, pattern: re.Pattern, max_chars: int = 80) -> bool:
+    """A whole block that is page furniture, e.g. 'Apple Inc. | 2025 Form 10-K | 29'.
+    Only a single short line counts, so a content block that merely ENDS with a footer
+    line is never dropped (that line is stripped by strip_footer_lines instead)."""
+    t = (rec["text"] or "").strip()
+    return (rec["table"] is None and bool(t) and "\n" not in t
+            and len(t) <= max_chars and bool(pattern.search(t)))
 
 
-def to_markdown(records: list[dict], headings: dict, footer: re.Pattern) -> tuple[str, int]:
+def strip_footer_lines(text: str, line_pattern: re.Pattern) -> str:
+    """Remove '... | 2025 Form 10-K | 29' lines merged into a bigger block (Markdown/TXT only;
+    the JSONL keeps the block's full text). Bare numbers are content and stay."""
+    return "\n".join(l for l in text.splitlines() if not line_pattern.search(l.strip()))
+
+
+def to_markdown(records: list[dict], headings: dict, footer: re.Pattern, footer_line: re.Pattern,
+                fragments: set = frozenset()) -> tuple[str, int]:
     first = records[0]
     out = [f"# {first['company']} {first['form']} FY{first['fiscal_year']} ({first['doc_id']})"]
     heading_ids = {bid for _, bid in headings.values()}
@@ -262,16 +299,18 @@ def to_markdown(records: list[dict], headings: dict, footer: re.Pattern) -> tupl
         if is_footer(r, footer):
             skipped += 1                       # page furniture: kept in the JSONL, left out here
             continue
+        if r["block_id"] in fragments:         # the "Item" half of a split heading: already in the ## line
+            continue
         src = f"<!-- {r['doc_id']} p{r['page']} {r['block_id']} -->"
         if r["section"] != current:
             current = r["section"]
             if r["block_id"] in heading_ids:   # the Item heading itself becomes the ## line
-                out += [src, f"## {r['text'].strip().splitlines()[0]}"]
+                out += [src, f"## {headings.get(r['section'], (r['text'].strip().splitlines()[0],))[0]}"]
                 continue
             if current:
                 out.append(f"## {headings.get(current, (current, None))[0]}")
         if r["block_id"] in heading_ids:
-            out += [src, f"## {r['text'].strip().splitlines()[0]}"]
+            out += [src, f"## {headings.get(r['section'], (r['text'].strip().splitlines()[0],))[0]}"]
         elif r["block_type"] == "Title":
             out += [src, f"### {r['text'].strip()}"]
         elif r["block_type"] == "Table" and r["table"]:
@@ -279,20 +318,21 @@ def to_markdown(records: list[dict], headings: dict, footer: re.Pattern) -> tupl
         elif r["block_type"] == "Figure":
             fig = f"![Figure, page {r['page']}]({r['figure_path']})" if r["figure_path"] else "*[Figure]*"
             out += [src, fig] + ([r["text"].strip()] if r["text"] and r["text"].strip() else [])
-        elif r["text"] and r["text"].strip():
-            out += [src, r["text"].strip()]
+        elif r["text"] and strip_footer_lines(r["text"], footer_line).strip():
+            out += [src, strip_footer_lines(r["text"], footer_line).strip()]
     return "\n\n".join(out) + "\n", skipped
 
 
-def to_text(records: list[dict], footer: re.Pattern) -> str:
+def to_text(records: list[dict], footer: re.Pattern, footer_line: re.Pattern,
+            fragments: set = frozenset()) -> str:
     parts = []
     for r in records:
-        if is_footer(r, footer):
+        if is_footer(r, footer) or r["block_id"] in fragments:
             continue
         if r["table"]:
             parts.append("\n".join(" ".join(c for c in row if c) for row in r["table"]["raw_cells"]))
-        elif r["text"] and r["text"].strip():
-            parts.append(r["text"].strip())
+        elif r["text"] and strip_footer_lines(r["text"], footer_line).strip():
+            parts.append(strip_footer_lines(r["text"], footer_line).strip())
     return "\n\n".join(parts) + "\n"
 
 
@@ -313,6 +353,7 @@ def main() -> None:
 
     params = load_params(a.params)
     footer = re.compile(params["export"]["footer_pattern"])
+    footer_line = re.compile(params["export"]["footer_line_pattern"])
     rendered, out_dir = Path(a.rendered), Path(a.output)
     manifest = load_manifest(Path(a.manifest) if a.manifest else rendered / "manifest.csv")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -327,15 +368,15 @@ def main() -> None:
         pdf_path = rendered / f"{stem}.pdf"
         pdf_rel = pdf_path.as_posix()
         fiscal = dei_facts(Path(a.raw), man["accession"])
-        records, headings = build_records(stem, blocks, man, fiscal, pdf_rel,
-                                          sha256_of(pdf_path), Path(a.parsed), params)
+        records, headings, fragments = build_records(stem, blocks, man, fiscal, pdf_rel,
+                                                     sha256_of(pdf_path), Path(a.parsed), params)
         if len(records) != len(blocks):
             raise RuntimeError(f"{stem}: {len(records)} records for {len(blocks)} blocks")
 
         n = write_jsonl(records, out_dir / f"{stem}.jsonl")         # validates every record
-        md, skipped = to_markdown(records, headings, footer)
+        md, skipped = to_markdown(records, headings, footer, footer_line, fragments)
         (out_dir / f"{stem}.md").write_text(md, encoding="utf-8", newline="\n")
-        (out_dir / f"{stem}.txt").write_text(to_text(records, footer), encoding="utf-8", newline="\n")
+        (out_dir / f"{stem}.txt").write_text(to_text(records, footer, footer_line, fragments), encoding="utf-8", newline="\n")
 
         keys = record_keys()
         if keys_seen is not None and keys != keys_seen:
@@ -343,7 +384,8 @@ def main() -> None:
         keys_seen = keys
         n_tables = sum(1 for r in records if r["table"])
         print(f"[INFO] {stem}: FY{fiscal[0]} {fiscal[1]} | {n} records | {n_tables} table objects | "
-              f"{len(headings)} Item sections | {skipped} footer blocks left out of the Markdown")
+              f"{len(headings)} Item sections | {skipped} footer blocks left out of the Markdown | "
+              f"{len(fragments)} split Item heading(s) rejoined")
     print("[INFO] Export complete")
 
 
