@@ -67,3 +67,19 @@ stages:
     outs:
       - data/layout
       - data/figures
+
+  export:
+    cmd: python -m src.export --layout data/layout --parsed data/parsed --rendered data/rendered --raw data/raw --output data/export
+    deps:
+      - src/export.py
+      - src/schema.py
+      - src/tables.py
+      - data/layout
+      - data/parsed
+      - data/rendered
+      - data/raw
+    params:
+      - tables
+      - export
+    outs:
+      - data/export
