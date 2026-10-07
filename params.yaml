@@ -72,3 +72,9 @@ layout:
 managed:
   enabled: false
   provider: ""
+
+  
+docling:
+  do_ocr: false
+  table_mode: accurate
+  html_stem: AAPL_10K_20240928
