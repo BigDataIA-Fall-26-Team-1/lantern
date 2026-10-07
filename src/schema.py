@@ -40,6 +40,7 @@ class TableObject(BaseModel):
     scale: dict[str, float]                             # e.g. {"money": 1e6, "shares": 1e3, "per_share": 1}
     row_kinds: Optional[list[str]] = None               # header / money / shares / per_share
     method: Optional[str] = None                        # e.g. camelot-stream
+    status: Optional[str] = None                        # accepted / best_below_threshold (Part 2 decision)
     source_csv: Optional[str] = None                    # Part 2 file the table came from
 
     @model_validator(mode="after")
@@ -83,6 +84,10 @@ class Record(BaseModel):
     ocr_conf: Optional[float] = None
     source_path: str
     sha256: str
+    # extra provenance beyond Appendix B's minimum (always present, may be null)
+    detector: Optional[str] = None                      # LayoutParser model that found the block
+    detector_score: Optional[float] = None              # its confidence, 0-1
+    figure_path: Optional[str] = None                   # crop in data/figures for Figure blocks
 
     @field_validator("doc_id")
     @classmethod
@@ -131,11 +136,20 @@ class Record(BaseModel):
             raise ValueError(f"bbox has negative coordinates: {v}")
         return v
 
-    @field_validator("source_path")
+    @field_validator("source_path", "figure_path")
     @classmethod
-    def _source_path(cls, v: str) -> str:
+    def _relative_path(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
         if "\\" in v or v.startswith("/") or re.match(r"^[A-Za-z]:", v):
-            raise ValueError(f"source_path must be relative with forward slashes, got {v!r}")
+            raise ValueError(f"paths must be relative with forward slashes, got {v!r}")
+        return v
+
+    @field_validator("detector_score")
+    @classmethod
+    def _score(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and not 0 <= v <= 1:
+            raise ValueError(f"detector_score must be 0-1, got {v}")
         return v
 
     @field_validator("sha256")
