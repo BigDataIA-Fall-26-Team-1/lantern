@@ -19,7 +19,20 @@ recs = get(f"/filings/{stem}/pages/{page}/records") or []
 types = sorted({r.get("block_type") for r in recs if r.get("block_type")})
 show = st.sidebar.multiselect("Block types", types, default=types)
 recs = [r for r in recs if r.get("block_type") in show]
-pick = st.sidebar.selectbox("Highlight block", ["(none)"] + [r.get("block_id") for r in recs])
+by_id = {r.get("block_id"): r for r in recs}
+
+
+def block_label(bid):
+    if bid == "(none)":
+        return "(none)"
+    r = by_id[bid]
+    preview = (r.get("text") or "").strip().replace("\n", " ")[:50]
+    return f"{r.get('block_type')} · {preview or '(no text)'}  [{bid}]"
+
+
+pick = st.selectbox("Highlight block", ["(none)"] + list(by_id),
+                            format_func=block_label,
+                            help="Pick a block to outline it in red and show its JSONL record.")
 highlight = None if pick == "(none)" else pick
 
 left, right = st.columns([3, 2])
@@ -36,7 +49,10 @@ keys = ["block_id", "block_type", "section", "text", "extractor", "ocr", "ocr_co
 df = pd.DataFrame([{k: r.get(k) for k in keys} for r in recs])
 if not df.empty:
     df["text"] = df["text"].fillna("").astype(str).str.slice(0, 120)
-    right.dataframe(df.astype(str), hide_index=True)
+    right.dataframe(df.rename(columns={
+        "block_id": "Block", "block_type": "Type", "section": "Section", "text": "Text (first 120 chars)",
+        "extractor": "Extractor", "ocr": "OCR used", "ocr_conf": "OCR confidence"}).astype(str),
+        hide_index=True)
 if highlight:
     right.subheader("JSONL record")
     right.json(next(r for r in recs if r.get("block_id") == highlight))

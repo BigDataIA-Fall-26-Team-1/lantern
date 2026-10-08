@@ -13,8 +13,8 @@ COLORS = {"Text": "#1f77b4", "Title": "#d62728", "List": "#2ca02c",
 
 
 @st.cache_data(ttl=300)
-def get(path, **params):
-    r = requests.get(f"{API}{path}", params=params, timeout=60)
+def get(endpoint, **params):
+    r = requests.get(f"{API}{endpoint}", params=params, timeout=60)
     if r.status_code == 404:
         return None
     r.raise_for_status()
@@ -22,8 +22,8 @@ def get(path, **params):
 
 
 @st.cache_data(ttl=300)
-def get_bytes(path, **params):
-    r = requests.get(f"{API}{path}", params=params, timeout=60)
+def get_bytes(endpoint, **params):
+    r = requests.get(f"{API}{endpoint}", params=params, timeout=60)
     if r.status_code == 404:
         return None
     r.raise_for_status()

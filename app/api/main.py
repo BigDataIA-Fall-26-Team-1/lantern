@@ -30,6 +30,29 @@ def _load_records():
 RECORDS = _load_records()
 MARKDOWN = {p.stem: p.read_text(encoding="utf-8") for p in sorted(EXPORT.glob("*.md"))}
 
+def _first_line(text, n=70):
+    s = (text or "").strip()
+    line = s.splitlines()[0].strip() if s else ""
+    return line[:n] + ("..." if len(line) > n else "")
+
+
+def _build_context():
+    """Heading above each block: the last non-table text block before it on the same page."""
+    ctx = {}
+    for stem, recs in RECORDS.items():
+        prev = {}
+        for r in recs:  # records are stored in reading order
+            p = r.get("page")
+            ctx[(stem, r.get("block_id"))] = prev.get(p, "")
+            line = _first_line(r.get("text"))
+            if (r.get("block_type") != "Table" and len(line) > 10
+                    and not (line.startswith("(") and line.endswith(")"))):
+                prev[p] = line  # skips "Apple Inc." and "(In millions)"
+    return ctx
+
+
+CONTEXT = _build_context()
+
 
 def _records_for(stem):
     if stem not in RECORDS:
@@ -99,7 +122,8 @@ def page_image(stem: str, page: int, dpi: int = 100):
 
 @app.get("/filings/{stem}/tables")
 def tables(stem: str):
-    return [r for r in _records_for(stem)
+    return [{"context": CONTEXT.get((stem, r.get("block_id")), ""), "record": r}
+            for r in _records_for(stem)
             if r.get("block_type") == "Table" and r.get("table")]
 
 
@@ -134,6 +158,7 @@ def search(q: str, stem: str | None = None, limit: int = 50):
                 hits.append({"stem": s,
                              **{k: r.get(k) for k in
                                 ("doc_id", "page", "block_id", "block_type", "section")},
+                             "context": CONTEXT.get((s, r.get("block_id")), ""),
                              "snippet": _snippet(hay, needle)})
                 if len(hits) >= limit:
                     return hits
