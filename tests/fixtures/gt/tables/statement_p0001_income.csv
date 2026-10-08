@@ -1,0 +1,58 @@
+row_label,column,value
+Products,2025,"307,003"
+Products,2024,"294,866"
+Products,2023,"298,085"
+Services,2025,"109,158"
+Services,2024,"96,169"
+Services,2023,"85,200"
+Total net sales,2025,"416,161"
+Total net sales,2024,"391,035"
+Total net sales,2023,"383,285"
+Products,2025,"194,116"
+Products,2024,"185,233"
+Products,2023,"189,282"
+Services,2025,"26,844"
+Services,2024,"25,119"
+Services,2023,"24,855"
+Total cost of sales,2025,"220,960"
+Total cost of sales,2024,"210,352"
+Total cost of sales,2023,"214,137"
+Gross margin,2025,"195,201"
+Gross margin,2024,"180,683"
+Gross margin,2023,"169,148"
+Research and development,2025,"34,550"
+Research and development,2024,"31,370"
+Research and development,2023,"29,915"
+"Selling, general and administrative",2025,"27,601"
+"Selling, general and administrative",2024,"26,097"
+"Selling, general and administrative",2023,"24,932"
+Total operating expenses,2025,"62,151"
+Total operating expenses,2024,"57,467"
+Total operating expenses,2023,"54,847"
+Operating income,2025,"133,050"
+Operating income,2024,"123,216"
+Operating income,2023,"114,301"
+"Other income/(expense), net",2025,(321)
+"Other income/(expense), net",2024,269
+"Other income/(expense), net",2023,(565)
+Income before provision for income taxes,2025,"132,729"
+Income before provision for income taxes,2024,"123,485"
+Income before provision for income taxes,2023,"113,736"
+Provision for income taxes,2025,"20,719"
+Provision for income taxes,2024,"29,749"
+Provision for income taxes,2023,"16,741"
+Net income,2025,"112,010"
+Net income,2024,"93,736"
+Net income,2023,"96,995"
+Basic,2025,7.49
+Basic,2024,6.11
+Basic,2023,6.16
+Diluted,2025,7.46
+Diluted,2024,6.08
+Diluted,2023,6.13
+Basic,2025,"14,948,500"
+Basic,2024,"15,343,783"
+Basic,2023,"15,744,231"
+Diluted,2025,"15,004,697"
+Diluted,2024,"15,408,095"
+Diluted,2023,"15,812,547"
