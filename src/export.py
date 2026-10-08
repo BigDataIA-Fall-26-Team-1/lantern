@@ -12,10 +12,18 @@ Inputs (all produced by earlier stages):
     data/rendered/{stem}.pdf          source_path and sha256
     data/raw/.../unpacked/*.htm       dei:DocumentFiscalYearFocus / dei:DocumentFiscalPeriodFocus
 
+    data/managed/*.json               Part 7 Textract cache (read only; see src/managed/fallback.py)
+
 Outputs:
     data/export/{stem}.jsonl          one validated record per block (src/schema.py)
     data/export/{stem}.md             sections in reading order, <!-- doc page block --> before every block
     data/export/{stem}.txt            plain text baseline, no structure, no provenance
+    data/export/managed_fallback_log.csv  every table that triggered the managed fallback
+
+A Table block whose Part 3 status is best_below_threshold / no_valid_table (or whose score is
+below tables.accept_score) triggers the managed fallback: if Textract's response for that page
+is cached, its overlapping table replaces Camelot's (status "managed"). With managed.enabled
+false (the default) a cache miss changes nothing and no API is called.
 """
 
 from __future__ import annotations
@@ -32,6 +40,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+from src.managed.fallback import Fallback
 from src.schema import SCHEMA_VERSION, record_keys, write_jsonl
 from src.tables import normalize_df
 
@@ -180,7 +189,7 @@ def item_label(block: dict, max_chars: int, item_words: list[dict]) -> tuple[str
     return None
 
 
-def build_records(stem, blocks, man, fiscal, pdf_rel, sha, parsed_dir, params):
+def build_records(stem, blocks, man, fiscal, pdf_rel, sha, parsed_dir, params, managed: Fallback | None = None):
     tp, ep = params["tables"], params["export"]
     fy, fp = fiscal
     versions = {k: pkg(k) for k in ("pdfplumber", "pytesseract", "camelot-py", "layoutparser")}
@@ -212,10 +221,26 @@ def build_records(stem, blocks, man, fiscal, pdf_rel, sha, parsed_dir, params):
         btype = b["type"]
         text = b.get("text")
         table = table_object(b, page_text(b["page"]), tp) if btype == "Table" else None
+        hit = None
+        if btype == "Table" and managed is not None:
+            trigger = managed.table_trigger(b.get("table") or {})
+            if trigger:
+                hit = managed.table(pdf_rel, b["page"], b["bbox"], trigger, stem, b["block_id"], sha)
+                mt = table_object({"table": {"rows": hit["grid"], "status": "accepted", "method": "aws-textract"}},
+                                  page_text(b["page"]), tp) if hit else None
+                if mt is not None:
+                    mt["status"] = "managed"
+                    table = mt
+                else:
+                    hit = None
         if btype in ("Text", "Title", "List", "Footnote") and text is None:
             text = ""
         ocr = bool(b.get("ocr"))
-        if table is not None:
+        ocr_conf = b.get("ocr_conf") if ocr else None
+        if hit is not None:
+            extractor, ext_ver = "aws-textract", hit["extractor_version"]
+            ocr, ocr_conf = True, hit["ocr_conf"]
+        elif table is not None:
             extractor, ext_ver = table["method"] or "camelot", versions["camelot-py"]
         elif ocr:
             extractor, ext_ver = "tesseract", versions["pytesseract"]
@@ -245,7 +270,7 @@ def build_records(stem, blocks, man, fiscal, pdf_rel, sha, parsed_dir, params):
             "extractor": extractor,
             "extractor_version": ext_ver,
             "ocr": ocr,
-            "ocr_conf": b.get("ocr_conf") if ocr else None,
+            "ocr_conf": ocr_conf,
             "source_path": pdf_rel,
             "sha256": sha,
             "detector": b.get("model"),
@@ -349,6 +374,7 @@ def main() -> None:
     ap.add_argument("--output", default="data/export")
     ap.add_argument("--params", default="params.yaml")
     ap.add_argument("--manifest", default=None, help="default: <rendered>/manifest.csv")
+    ap.add_argument("--managed-cache", default="data/managed", help="Part 7 Textract cache")
     a = ap.parse_args()
 
     params = load_params(a.params)
@@ -357,6 +383,7 @@ def main() -> None:
     rendered, out_dir = Path(a.rendered), Path(a.output)
     manifest = load_manifest(Path(a.manifest) if a.manifest else rendered / "manifest.csv")
     out_dir.mkdir(parents=True, exist_ok=True)
+    managed = Fallback(params["managed"], a.managed_cache, accept_score=params["tables"]["accept_score"])
 
     keys_seen = None
     for stem, man in sorted(manifest.items()):
@@ -369,7 +396,7 @@ def main() -> None:
         pdf_rel = pdf_path.as_posix()
         fiscal = dei_facts(Path(a.raw), man["accession"])
         records, headings, fragments = build_records(stem, blocks, man, fiscal, pdf_rel,
-                                                     sha256_of(pdf_path), Path(a.parsed), params)
+                                                     sha256_of(pdf_path), Path(a.parsed), params, managed)
         if len(records) != len(blocks):
             raise RuntimeError(f"{stem}: {len(records)} records for {len(blocks)} blocks")
 
@@ -386,6 +413,8 @@ def main() -> None:
         print(f"[INFO] {stem}: FY{fiscal[0]} {fiscal[1]} | {n} records | {n_tables} table objects | "
               f"{len(headings)} Item sections | {skipped} footer blocks left out of the Markdown | "
               f"{len(fragments)} split Item heading(s) rejoined")
+    managed.write_log(out_dir / "managed_fallback_log.csv")
+    print(f"[INFO] Managed fallback: {managed.summary()} -> {out_dir / 'managed_fallback_log.csv'}")
     print("[INFO] Export complete")
 
 

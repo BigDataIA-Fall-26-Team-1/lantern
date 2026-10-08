@@ -12,6 +12,12 @@ Outputs:
     {output}/{stem}_p{NNNN}.txt     one text file per page
     {output}/{stem}.words.jsonl     word boxes in PDF points, top-left origin
     {output}/ocr_log.csv            one row per page: the OCR decision
+    {output}/managed_fallback_log.csv  pages whose OCR triggered the managed fallback (Part 7)
+
+A page read with Tesseract whose mean confidence is below managed.ocr_conf_threshold (or
+whose OCR text is empty) triggers the managed fallback: if Textract's response for that page
+is cached, its text and word boxes are used instead (engine "aws-textract"). With
+managed.enabled false (the default) a cache miss changes nothing and no API is called.
 
 Needs the Tesseract binary. If it is not on PATH (common on Windows), set
 the TESSERACT_CMD environment variable to the full path of tesseract.exe.
@@ -24,7 +30,11 @@ import csv
 import json
 import os
 import re
+import sys
 from pathlib import Path
+
+# allow `python src/parse_text.py` (DVC stage and CI) to import src.managed
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pdfplumber
 import pytesseract
@@ -166,7 +176,7 @@ def check_tesseract() -> None:
 
 
 def parse_pdf(pdf_path: Path, out_dir: Path, doc_id: str,
-              text_params: dict, ocr_params: dict, log_rows: list[dict]) -> int:
+              text_params: dict, ocr_params: dict, log_rows: list[dict], managed=None) -> int:
     """Write per-page .txt files and one words.jsonl; add one log row per
     page. Pages that trigger the OCR rule are re-read with Tesseract."""
     stem = pdf_path.stem
@@ -190,6 +200,12 @@ def parse_pdf(pdf_path: Path, out_dir: Path, doc_id: str,
                 text, words = ocr_text, ocr_words
                 if not text.strip():
                     print(f"[WARN] {stem} p{n:04d}: OCR returned no text")
+                trigger = managed.text_trigger(mean_conf, text) if managed is not None else None
+                if trigger:
+                    hit = managed.text(pdf_path, n, (float(page.width), float(page.height)), trigger, stem)
+                    if hit:
+                        text, words, mean_conf, engine = hit["text"], hit["words"], hit["mean_conf"], "aws-textract"
+                        print(f"       p{n:04d} managed fallback used ({trigger})")
 
             print(f"       p{n:04d} chars={decision['n_chars']} "
                   f"junk={decision['junk_ratio']} img={decision['image_coverage']} "
@@ -252,6 +268,8 @@ def main() -> None:
     parser.add_argument("--params", default="params.yaml")
     parser.add_argument("--manifest", default=None,
                         help="manifest.csv (default: <input>/manifest.csv)")
+    parser.add_argument("--managed-cache", default="data/managed",
+                        help="Part 7 Textract cache (default: data/managed)")
     args = parser.parse_args()
 
     params = load_params(args.params)
@@ -271,16 +289,24 @@ def main() -> None:
         print(f"[ERROR] No PDFs found in {input_path}")
         return
 
+    managed = None
+    if "managed" in params:
+        from src.managed.fallback import Fallback
+        managed = Fallback(params["managed"], args.managed_cache)
+
     log_rows: list[dict] = []
     for pdf_path in pdfs:
         doc_id = manifest.get(pdf_path.stem, pdf_path.stem)
         print(f"[INFO] {pdf_path.name} (doc_id={doc_id})")
-        n_pages = parse_pdf(pdf_path, out_dir, doc_id, text_params, ocr_params, log_rows)
+        n_pages = parse_pdf(pdf_path, out_dir, doc_id, text_params, ocr_params, log_rows, managed)
         print(f"[INFO] {pdf_path.name}: {n_pages} pages")
 
     write_ocr_log(log_rows, out_dir / "ocr_log.csv")
     n_ocr = sum(1 for r in log_rows if r["triggered"])
     print(f"[INFO] OCR used on {n_ocr} of {len(log_rows)} pages -> ocr_log.csv")
+    if managed is not None:
+        managed.write_log(out_dir / "managed_fallback_log.csv")
+        print(f"[INFO] Managed fallback: {managed.summary()} -> managed_fallback_log.csv")
     print("[INFO] Text extraction complete")
 
 
