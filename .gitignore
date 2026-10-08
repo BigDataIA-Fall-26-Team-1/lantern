@@ -3,8 +3,18 @@
 __pycache__/
 *.pyc
 .DS_Store
- 
+
 # data is tracked by DVC, not Git. Keep the DVC pointer files.
-data/*
-!data/*.dvc
-!data/.gitignore
+/data/raw/
+/data/rendered/
+/data/parsed/
+/data/tables/
+/data/layout/
+/data/figures/
+/data/docling/
+/data/export/
+/data/managed/
+/data/managed_records/
+/data/xbrl/
+/data/bench/
+/data/ground_truth/
