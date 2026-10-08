@@ -180,8 +180,8 @@ stages:
       nfiles: 3
     - path: src/docling_parse.py
       hash: md5
-      md5: ddf94b187775cb3a1b774f7ca69480a4
-      size: 11474
+      md5: e84401b943eb2be0092a1f4dffd13474
+      size: 11470
     params:
       params.yaml:
         docling:
@@ -191,8 +191,8 @@ stages:
     outs:
     - path: data/docling
       hash: md5
-      md5: 0a9f1afa0932dd8597e0c0f8b00ff3af.dir
-      size: 18757654
+      md5: 5ef741e98343e47fa46ca455e8c02d01.dir
+      size: 18766220
       nfiles: 294
   layout:
     cmd: python src/layout.py --input data/rendered --output data/layout 
