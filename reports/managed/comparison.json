@@ -1,0 +1,144 @@
+{
+ "statement_tables": [
+  {
+   "page": 32,
+   "part2_table": "AAPL_10K_20250927_p0032_income.norm.csv",
+   "part2_cells": 57,
+   "textract_cells": 57,
+   "matching": 57,
+   "agreement_precision": 1.0,
+   "agreement_recall": 1.0,
+   "agreement_f1": 1.0,
+   "textract_shape": "28x4",
+   "part2_shape": "27x4"
+  },
+  {
+   "page": 34,
+   "part2_table": "AAPL_10K_20250927_p0034_balance.norm.csv",
+   "part2_cells": 54,
+   "textract_cells": 54,
+   "matching": 54,
+   "agreement_precision": 1.0,
+   "agreement_recall": 1.0,
+   "agreement_f1": 1.0,
+   "textract_shape": "41x3",
+   "part2_shape": "39x3"
+  }
+ ],
+ "ocr": [
+  {
+   "scanned_page": 1,
+   "reference": "AAPL_10K_20250927 p5 (born-digital text)",
+   "engine": "tesseract",
+   "self_reported_conf": 95.4,
+   "ref_words": 544,
+   "hyp_words": 544,
+   "wer": 0.0,
+   "cer": 0.0,
+   "wer_typography_normalized": 0.0,
+   "cer_typography_normalized": 0.0,
+   "ref_numbers": 6,
+   "num_acc": 1.0
+  },
+  {
+   "scanned_page": 1,
+   "reference": "AAPL_10K_20250927 p5 (born-digital text)",
+   "engine": "aws-textract",
+   "self_reported_conf": 99.1,
+   "ref_words": 544,
+   "hyp_words": 544,
+   "wer": 0.0312,
+   "cer": 0.0045,
+   "wer_typography_normalized": 0.0037,
+   "cer_typography_normalized": 0.0005,
+   "ref_numbers": 6,
+   "num_acc": 1.0
+  },
+  {
+   "scanned_page": 2,
+   "reference": "AAPL_10K_20250927 p6 (born-digital text)",
+   "engine": "tesseract",
+   "self_reported_conf": 95.7,
+   "ref_words": 855,
+   "hyp_words": 855,
+   "wer": 0.0,
+   "cer": 0.0,
+   "wer_typography_normalized": 0.0,
+   "cer_typography_normalized": 0.0,
+   "ref_numbers": 3,
+   "num_acc": 1.0
+  },
+  {
+   "scanned_page": 2,
+   "reference": "AAPL_10K_20250927 p6 (born-digital text)",
+   "engine": "aws-textract",
+   "self_reported_conf": 99.8,
+   "ref_words": 855,
+   "hyp_words": 854,
+   "wer": 0.0187,
+   "cer": 0.003,
+   "wer_typography_normalized": 0.0023,
+   "cer_typography_normalized": 0.0005,
+   "ref_numbers": 3,
+   "num_acc": 1.0
+  },
+  {
+   "scanned_page": 3,
+   "reference": "AAPL_10K_20250927 p7 (born-digital text)",
+   "engine": "tesseract",
+   "self_reported_conf": 95.5,
+   "ref_words": 681,
+   "hyp_words": 681,
+   "wer": 0.0015,
+   "cer": 0.0002,
+   "wer_typography_normalized": 0.0015,
+   "cer_typography_normalized": 0.0002,
+   "ref_numbers": 13,
+   "num_acc": 1.0
+  },
+  {
+   "scanned_page": 3,
+   "reference": "AAPL_10K_20250927 p7 (born-digital text)",
+   "engine": "aws-textract",
+   "self_reported_conf": 99.7,
+   "ref_words": 681,
+   "hyp_words": 680,
+   "wer": 0.0206,
+   "cer": 0.0035,
+   "wer_typography_normalized": 0.0044,
+   "cer_typography_normalized": 0.0009,
+   "ref_numbers": 13,
+   "num_acc": 1.0
+  }
+ ],
+ "below_threshold": [
+  {
+   "page": 22,
+   "block_id": "p0022_b011",
+   "camelot_method": "camelot-network",
+   "camelot_score": 78.46,
+   "camelot_status": "best_below_threshold",
+   "camelot_shape": "13x5",
+   "camelot_numeric_cells": 12,
+   "camelot_empty_share": 0.431,
+   "textract_overlap": 0.95,
+   "textract_shape": "10x5",
+   "textract_numeric_cells": 11,
+   "textract_empty_share": 0.54
+  },
+  {
+   "page": 47,
+   "block_id": "p0047_b003",
+   "camelot_method": "camelot-stream",
+   "camelot_score": 72.69,
+   "camelot_status": "best_below_threshold",
+   "camelot_shape": "14x6",
+   "camelot_numeric_cells": 17,
+   "camelot_empty_share": 0.476,
+   "textract_overlap": 0.97,
+   "textract_shape": "13x6",
+   "textract_numeric_cells": 17,
+   "textract_empty_share": 0.513
+  }
+ ]
+}
