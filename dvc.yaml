@@ -95,3 +95,21 @@ stages:
       - managed
     outs:
       - data/export
+
+  xbrl:
+    cmd: python src/xbrl.py
+    deps:
+      - src/xbrl.py
+      - src/evaluate.py
+      - src/tables.py
+      - config/label_map.yaml
+      - data/raw
+      - data/rendered
+      - data/tables
+      - data/docling
+      - data/parsed
+    params:
+      - xbrl
+      - tables
+    outs:
+      - data/xbrl

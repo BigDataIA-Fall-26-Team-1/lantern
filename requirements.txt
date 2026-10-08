@@ -27,4 +27,4 @@ pytest==9.1.1
 PyYAML==6.0.3
 sec-edgar-downloader==5.1.0
 jiwer==4.0.0
-
+arelle-release==2.46.1
