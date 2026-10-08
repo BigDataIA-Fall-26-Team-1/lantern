@@ -86,3 +86,9 @@ export:
   item_heading_max_chars: 150
   footer_pattern: '(\|\s*\d{4}\s+Form\s+10-[KQ]\s*\|\s*\d+|^\s*\d{1,3})\s*$'
   footer_line_pattern: '\|\s*\d{4}\s+Form\s+10-[KQ]\s*\|\s*\d+\s*$'
+
+eval:
+  thresholds:
+    statement_max_wer: 0.05         # measured 0.0227 on the statement fixture
+    min_numeric_recall: 0.98        # measured 1.0
+    table_min_f1: 0.98              # measured 1.0 (57 of 57 cells)
