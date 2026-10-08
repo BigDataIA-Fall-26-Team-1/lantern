@@ -19,12 +19,14 @@ Measured by `python -m src.format_stats`, written to `reports/format_stats.csv`.
 | FY2024 full filing | JSONL | 811,191 | 809,410 | 202,352 | 4.0× |
 | | Markdown | 248,304 | 246,677 | 61,669 | 1.2× |
 | | TXT | 204,869 | 203,242 | 50,810 | 1.0× |
-| FY2025 full filing | JSONL | 795,773 | 793,772 | 198,443 | 3.9× |
-| | Markdown | 250,073 | 248,328 | 62,082 | 1.2× |
-| | TXT | 207,553 | 205,808 | 51,452 | 1.0× |
+| FY2025 full filing | JSONL | 795,499 | 793,536 | 198,384 | 3.9× |
+| | Markdown | 249,975 | 248,250 | 62,062 | 1.2× |
+| | TXT | 207,509 | 205,784 | 51,446 | 1.0× |
 | FY2025 pages 31–34 (test slice) | JSONL | 30,565 | 30,539 | 7,635 | 6.4× |
 | | Markdown | 6,449 | 6,439 | 1,610 | 1.4× |
 | | TXT | 4,771 | 4,761 | 1,190 | 1.0× |
+
+The FY2025 full-filing numbers were re-measured after Part 7's managed fallback replaced two below-threshold tables (pages 22 and 47) with Textract's. The slice (pages 31–34) and every ratio are unchanged.
 
 - JSONL costs about **4×** the tokens of plain text for a whole filing (about 200,000 tokens), and **6.4×** on statement pages, where every table is stored twice (raw and normalized) along with row kinds, column names and about 25 metadata fields per record.
 - Markdown costs only **20–40% more** than plain text, while keeping the Item headings, the tables as tables, and a page and block reference before every block. On the slice it is **21%** of the JSONL's tokens (1,610 vs 7,635).

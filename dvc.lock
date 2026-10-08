@@ -45,17 +45,47 @@ stages:
   parse_pdfplumber:
     cmd: python src/parse_text.py --input data/rendered --output data/parsed
     deps:
+    - path: data/managed
+      hash: md5
+      md5: 297d3c67d0d95cba3ab727bf87b76da2.dir
+      size: 3362966
+      nfiles: 7
     - path: data/rendered
       hash: md5
       md5: aeecdd5e3b8417e02d7a02b5615fa96f.dir
       size: 1106429
       nfiles: 3
+    - path: src/managed/blocks.py
+      hash: md5
+      md5: 052af0d84ee6f6f9991bc79468bf247e
+      size: 2899
+    - path: src/managed/cache.py
+      hash: md5
+      md5: 6ccc89ac965bdc20dada9a310abc446d
+      size: 2031
+    - path: src/managed/fallback.py
+      hash: md5
+      md5: 0bf90aabf5d2220bd18406d562be7a18
+      size: 5929
+    - path: src/managed/textract.py
+      hash: md5
+      md5: 904e8deb909c6e53ca88c69e5ec354bb
+      size: 3093
     - path: src/parse_text.py
       hash: md5
-      md5: 241a0c2f4e235f1f2187eb8de6e7814b
-      size: 10662
+      md5: 148f3bfaf1db5e28e443864321d1133a
+      size: 12235
     params:
       params.yaml:
+        managed:
+          enabled: false
+          provider: aws-textract
+          region: us-east-1
+          api: AnalyzeDocument
+          features:
+          - TABLES
+          - LAYOUT
+          ocr_conf_threshold: 70
         ocr:
           min_chars: 50
           junk_ratio: 0.3
@@ -68,9 +98,9 @@ stages:
     outs:
     - path: data/parsed
       hash: md5
-      md5: 8052a8d2e8f4f4c7a18bf2f900b00525.dir
-      size: 14171753
-      nfiles: 124
+      md5: 60d480cc629c17622fdf54c1c5bd3132.dir
+      size: 14171803
+      nfiles: 125
   tables:
     cmd: python src/tables.py --input data/rendered --output data/tables
     deps:
@@ -270,11 +300,16 @@ stages:
       md5: 50fc88b6ca1fdd84c21ab3088e2597bd.dir
       size: 1158924
       nfiles: 3
+    - path: data/managed
+      hash: md5
+      md5: 297d3c67d0d95cba3ab727bf87b76da2.dir
+      size: 3362966
+      nfiles: 7
     - path: data/parsed
       hash: md5
-      md5: 8052a8d2e8f4f4c7a18bf2f900b00525.dir
-      size: 14171753
-      nfiles: 124
+      md5: 60d480cc629c17622fdf54c1c5bd3132.dir
+      size: 14171803
+      nfiles: 125
     - path: data/raw
       hash: md5
       md5: 9f9f4e754120a177f3fd21d3b586085b.dir
@@ -287,8 +322,24 @@ stages:
       nfiles: 3
     - path: src/export.py
       hash: md5
-      md5: 9f1a71fda45a52b159409b6c183072cd
-      size: 17281
+      md5: 2102aecd80b10e54d8dd1359b4cca49b
+      size: 19074
+    - path: src/managed/blocks.py
+      hash: md5
+      md5: 052af0d84ee6f6f9991bc79468bf247e
+      size: 2899
+    - path: src/managed/cache.py
+      hash: md5
+      md5: 6ccc89ac965bdc20dada9a310abc446d
+      size: 2031
+    - path: src/managed/fallback.py
+      hash: md5
+      md5: 0bf90aabf5d2220bd18406d562be7a18
+      size: 5929
+    - path: src/managed/textract.py
+      hash: md5
+      md5: 904e8deb909c6e53ca88c69e5ec354bb
+      size: 3093
     - path: src/schema.py
       hash: md5
       md5: 280d6f28759af867bff1f5bde30a33d1
@@ -304,6 +355,15 @@ stages:
           footer_pattern: 
             (\|\s*\d{4}\s+Form\s+10-[KQ]\s*\|\s*\d+|^\s*\d{1,3})\s*$
           footer_line_pattern: \|\s*\d{4}\s+Form\s+10-[KQ]\s*\|\s*\d+\s*$
+        managed:
+          enabled: false
+          provider: aws-textract
+          region: us-east-1
+          api: AnalyzeDocument
+          features:
+          - TABLES
+          - LAYOUT
+          ocr_conf_threshold: 70
         tables:
           min_rulings: 6
           accept_score: 80
@@ -350,6 +410,6 @@ stages:
     outs:
     - path: data/export
       hash: md5
-      md5: c5d46b0493ca1be4e6f0c16df7ab68fb.dir
-      size: 2517763
-      nfiles: 6
+      md5: aa8284213004dae01822b3b4f47ade41.dir
+      size: 2519189
+      nfiles: 7

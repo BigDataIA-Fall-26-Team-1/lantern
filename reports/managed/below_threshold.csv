@@ -1,0 +1,3 @@
+page,block_id,camelot_method,camelot_score,camelot_status,camelot_shape,camelot_numeric_cells,camelot_empty_share,textract_overlap,textract_shape,textract_numeric_cells,textract_empty_share
+22,p0022_b011,camelot-network,78.46,best_below_threshold,13x5,12,0.431,0.95,10x5,11,0.54
+47,p0047_b003,camelot-stream,72.69,best_below_threshold,14x6,17,0.476,0.97,13x6,17,0.513

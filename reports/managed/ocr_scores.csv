@@ -1,0 +1,7 @@
+scanned_page,reference,engine,self_reported_conf,ref_words,hyp_words,wer,cer,wer_typography_normalized,cer_typography_normalized,ref_numbers,num_acc
+1,AAPL_10K_20250927 p5 (born-digital text),tesseract,95.4,544,544,0.0,0.0,0.0,0.0,6,1.0
+1,AAPL_10K_20250927 p5 (born-digital text),aws-textract,99.1,544,544,0.0312,0.0045,0.0037,0.0005,6,1.0
+2,AAPL_10K_20250927 p6 (born-digital text),tesseract,95.7,855,855,0.0,0.0,0.0,0.0,3,1.0
+2,AAPL_10K_20250927 p6 (born-digital text),aws-textract,99.8,855,854,0.0187,0.003,0.0023,0.0005,3,1.0
+3,AAPL_10K_20250927 p7 (born-digital text),tesseract,95.5,681,681,0.0015,0.0002,0.0015,0.0002,13,1.0
+3,AAPL_10K_20250927 p7 (born-digital text),aws-textract,99.7,681,680,0.0206,0.0035,0.0044,0.0009,13,1.0

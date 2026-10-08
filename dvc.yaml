@@ -27,9 +27,15 @@ stages:
     deps:
       - src/parse_text.py
       - data/rendered
+      - src/managed/fallback.py
+      - src/managed/textract.py
+      - src/managed/cache.py
+      - src/managed/blocks.py
+      - data/managed
     params:
       - text
       - ocr
+      - managed
     outs:
       - data/parsed
 
@@ -74,12 +80,18 @@ stages:
       - src/export.py
       - src/schema.py
       - src/tables.py
+      - src/managed/fallback.py
+      - src/managed/textract.py
+      - src/managed/cache.py
+      - src/managed/blocks.py
       - data/layout
       - data/parsed
       - data/rendered
       - data/raw
+      - data/managed
     params:
       - tables
       - export
+      - managed
     outs:
       - data/export

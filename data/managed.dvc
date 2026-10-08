@@ -1,0 +1,6 @@
+outs:
+- md5: 297d3c67d0d95cba3ab727bf87b76da2.dir
+  size: 3362966
+  nfiles: 7
+  hash: md5
+  path: managed
