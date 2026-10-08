@@ -92,3 +92,8 @@ eval:
     statement_max_wer: 0.05         # measured 0.0227 on the statement fixture
     min_numeric_recall: 0.98        # measured 1.0
     table_min_f1: 0.98              # measured 1.0 (57 of 57 cells)
+
+xbrl:
+  label_map: config/label_map.yaml
+  fuzzy_cutoff: 0.88                # how close a label must be for a fuzzy match
+  statements: [income, comprehensive_income, balance, cash_flows]

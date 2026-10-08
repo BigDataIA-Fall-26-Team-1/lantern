@@ -1,0 +1,60 @@
+# Part 11 - curated label -> XBRL concept map.
+# Only lines the filing's own label linkbase cannot map on its own:
+#   - dimensional lines (Products / Services are slices of a total, tagged with a member)
+#   - labels printed twice in one statement ("label|1" = first time on the page, "label|2" = second)
+# Every other line is mapped automatically from the label linkbase (see src/xbrl.py).
+# Keys are normalized labels: lowercase, straight apostrophes, no trailing colon.
+
+income:
+  "products|1":
+    concept: us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax
+    dims: {srt:ProductOrServiceAxis: us-gaap:ProductMember}
+  "services|1":
+    concept: us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax
+    dims: {srt:ProductOrServiceAxis: us-gaap:ServiceMember}
+  "products|2":
+    concept: us-gaap:CostOfGoodsAndServicesSold
+    dims: {srt:ProductOrServiceAxis: us-gaap:ProductMember}
+  "services|2":
+    concept: us-gaap:CostOfGoodsAndServicesSold
+    dims: {srt:ProductOrServiceAxis: us-gaap:ServiceMember}
+  "total net sales": us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax
+  "total cost of sales": us-gaap:CostOfGoodsAndServicesSold
+  "basic|1": us-gaap:EarningsPerShareBasic
+  "diluted|1": us-gaap:EarningsPerShareDiluted
+  "basic|2": us-gaap:WeightedAverageNumberOfSharesOutstandingBasic
+  "diluted|2": us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding
+
+balance:
+  "marketable securities|1": us-gaap:MarketableSecuritiesCurrent
+  "marketable securities|2": us-gaap:MarketableSecuritiesNoncurrent
+  "term debt|1": us-gaap:LongTermDebtCurrent
+  "term debt|2": us-gaap:LongTermDebtNoncurrent
+  "deferred revenue": us-gaap:ContractWithCustomerLiabilityCurrent
+  "other current liabilities": us-gaap:OtherLiabilitiesCurrent
+  "other non-current assets": us-gaap:OtherAssetsNoncurrent
+  "other non-current liabilities": us-gaap:OtherLiabilitiesNoncurrent
+
+cash_flows:
+  "other|1": us-gaap:OtherNoncashIncomeExpense                       # operating adjustments
+  "other|2": us-gaap:PaymentsForProceedsFromOtherInvestingActivities  # investing
+  "other|3": us-gaap:ProceedsFromPaymentsForOtherFinancingActivities  # financing
+  "share-based compensation expense": us-gaap:ShareBasedCompensation
+  "proceeds from/(repayments of) commercial paper, net": us-gaap:ProceedsFromRepaymentsOfCommercialPaper
+
+# Apple tagged these with its own extension concepts (aapl:) in FY2024 and with
+# standard us-gaap concepts in FY2025; the first concept with a fact is used.
+comprehensive_income:
+  "change in fair value of derivative instruments":
+    concept:
+      - aapl:OtherComprehensiveIncomeLossDerivativeInstrumentGainLossbeforeReclassificationafterTax
+      - us-gaap:OtherComprehensiveIncomeLossCashFlowHedgeGainLossBeforeReclassificationAfterTax
+  "adjustment for net (gains)/losses realized and included in net income|1":
+    concept:
+      - aapl:OtherComprehensiveIncomeLossDerivativeInstrumentGainLossReclassificationAfterTax
+      - us-gaap:OtherComprehensiveIncomeLossCashFlowHedgeGainLossReclassificationAfterTax
+  "total change in unrealized gains/losses on derivative instruments":
+    concept:
+      - aapl:OtherComprehensiveIncomeLossDerivativeInstrumentGainLossafterReclassificationandTax
+      - us-gaap:OtherComprehensiveIncomeLossCashFlowHedgeGainLossAfterReclassificationAndTax
+  "adjustment for net (gains)/losses realized and included in net income|2": us-gaap:OtherComprehensiveIncomeLossReclassificationAdjustmentFromAOCIForSaleOfSecuritiesNetOfTax
