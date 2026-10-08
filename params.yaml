@@ -71,9 +71,12 @@ layout:
 
 managed:
   enabled: false
-  provider: ""
+  provider: aws-textract
+  region: us-east-1
+  api: AnalyzeDocument
+  features: [TABLES, LAYOUT]
+  ocr_conf_threshold: 70
 
-  
 docling:
   do_ocr: false
   table_mode: accurate
