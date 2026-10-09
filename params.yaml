@@ -89,6 +89,7 @@ export:
 
 eval:
   thresholds:
+    scanned_max_wer: 0.05           # OCR on the scanned fixture
     statement_max_wer: 0.05         # measured 0.0227 on the statement fixture
     min_numeric_recall: 0.98        # measured 1.0
     table_min_f1: 0.98              # measured 1.0 (57 of 57 cells)
