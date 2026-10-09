@@ -12,8 +12,10 @@ Statements: income, comprehensive income, balance sheet, cash flows. The stateme
 shareholders' equity is out of scope: it is a grid of equity components tagged with
 dimensions, not a label-by-year table.
 
-Facts were loaded with Arelle from the iXBRL documents (`aapl-20240928.htm`: 957 numeric
-facts; `aapl-20250927.htm`: 962). Fiscal year ends were derived from the one-year
+Facts were loaded with Arelle from the iXBRL documents (`aapl-20240928.htm`,
+`aapl-20250927.htm`). iXBRL tags the same fact wherever it is printed, so duplicates
+(same concept, dimensions, period, unit and value) are dropped: 957 and 962 tagged numeric
+facts become 875 unique facts per filing. Fiscal year ends were derived from the one-year
 durations (2025-09-27, 2024-09-28, 2023-09-30, 2022-09-24). Arelle reports a period
 ending September 27 as midnight on September 28, so one day is subtracted from every end
 date.
@@ -35,9 +37,20 @@ concept). Instants inside a flow statement (beginning and ending cash) use the c
 own period type, with beginning balances matched at the prior year end.
 
 **Comparison:** tolerance from the fact's `decimals` (`-6` gives plus or minus 0.5 million).
-Status: `match`; `match_negated` (same amount, printed with a negated label, for example
-an outflow in parentheses while XBRL stores a positive amount); `sign`; `scale_xN`;
-`mismatch`; `xbrl_missing`; `unmapped`.
+
+| Status | Meaning |
+|---|---|
+| `match` | Equal within the tolerance |
+| `match_negated` | Same amount, printed with a negated label (an outflow in parentheses while XBRL stores a positive amount) |
+| `sign` | Same size, opposite sign |
+| `scale_xN` | Off by exactly a factor of N |
+| `mismatch` | Different value |
+| `xbrl_missing` | Concept found, but no fact for that period and dimensions |
+| `unmapped` | No concept found for the label |
+| `pdf_missing` | A fact the other path extracted and validated, missing from this path |
+
+**Expected facts for `pdf_missing`:** every (filing, statement, concept, dimensions,
+period) that at least one path extracted and found in XBRL.
 
 ## 3. Results
 
@@ -46,15 +59,16 @@ an outflow in parentheses while XBRL stores a positive amount); `sign`; `scale_x
 | Income | 114 / 114 | 114 / 114 |
 | Comprehensive income | 60 / 60 | 60 / 60 |
 | Balance sheet | 108 / 108 | 108 / 108 |
-| Cash flows | 174 / 174 | 168 / 168 |
-| **All** | **456 / 456 (100%)** | **450 / 450 (100%)** |
+| Cash flows | 174 / 174 | 168 / 170 (2 `pdf_missing`) |
+| **All** | **456 / 456 (100%)** | **450 / 452 (99.6%)** |
 
-Of these, 84 per path are `match_negated` (72 in cash flows, 12 in comprehensive income).
-No number on either path is a mismatch, a sign error or a scale error.
+Of the matches, 84 per path are `match_negated` (72 in cash flows, 12 in comprehensive
+income). No number on either path is a mismatch, a sign error or a scale error.
 
 ## 4. How we got there: two runs
 
-**Run 1, automatic mapping only (linkbase and fuzzy, minimal curated map):**
+**Run 1, automatic mapping only (linkbase and fuzzy, minimal curated map; before the
+de-duplication and the `pdf_missing` status were added):**
 
 | | Traditional | Docling |
 |---|---|---|
@@ -80,23 +94,26 @@ and lookup, not extraction.
 | Instant concept inside a flow statement | cash flows | Beginning and ending cash looked up as one-year durations | Use the concept's period type; prior year end for beginning balances |
 | Our negation logic | income | R&D flagged `sign` although values were equal: a negated label for the same concept exists elsewhere | Compare the plain value first; accept the opposite sign only for negated presentations |
 
-**Run 2:** after these fixes, 100% on both paths.
+**Final run:** after these fixes, every extracted number on both paths matches. The only
+remaining non-matches are Docling's 2 `pdf_missing` facts (section 5).
 
 ## 5. Traditional vs Docling
 
 Both paths extracted every number they found correctly. The difference is coverage:
 **Docling's cash flow tables did not contain the first row**, "Cash, cash equivalents,
 and restricted cash and cash equivalents, beginning balances", in either filing (6
-numbers). Docling's table structure model merged that row into the column header: the
-header cells of `AAPL_10K_20250927_pdf_p0036_t00.csv` read
+printed numbers). Docling's table structure model merged that row into the column
+header: the header cells of `AAPL_10K_20250927_pdf_p0036_t00.csv` read
 `Years ended.September 27, 2025 $ 29,943`, the year label and the row's first value in
 one cell, so the row's numbers never became data cells. The traditional path extracted
 the row in both filings.
 
+**Why this shows as 2 `pdf_missing` facts, not 6:** a year's beginning cash is the same
+XBRL fact as the previous year's ending cash, which Docling did capture. Only the oldest
+beginning balance in each filing is a fact Docling never extracted anywhere. So Docling
+lost 6 printed numbers, but 2 distinct facts.
+
 ## 6. Limitations
 
 - The curated map was built by diagnosing these two filings; on a new company or a new
-  year, unmapped lines would need the same diagnosis (the automatic tiers carried 73% of
-  numbers on their own here).
-- The statement of shareholders' equity is not validated (dimensional grid).
-- Only the primary statements are checked; note tables are not.v
+  year, unmapped lines

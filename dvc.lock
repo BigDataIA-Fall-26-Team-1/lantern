@@ -447,16 +447,16 @@ stages:
       nfiles: 22
     - path: src/evaluate.py
       hash: md5
-      md5: cf76c85f535ecf1217a853598f501059
-      size: 13714
+      md5: 6a0806497e1a5a3b4daee41ca1a9a045
+      size: 15414
     - path: src/tables.py
       hash: md5
       md5: 17a13a09cd299b5d9b958c1445bb3803
       size: 21383
     - path: src/xbrl.py
       hash: md5
-      md5: 88aceb4a5480f35107d2751870e27017
-      size: 18276
+      md5: a4466dc12921dd407ef0cb33615efe7e
+      size: 19690
     params:
       params.yaml:
         tables:
@@ -513,8 +513,8 @@ stages:
     outs:
     - path: data/xbrl
       hash: md5
-      md5: 7eb20270ba95aebe0293203d0eb0c8c4.dir
-      size: 497671
+      md5: c3d1f4b83ffae3032fb754ed59d7ea1e.dir
+      size: 478660
       nfiles: 3
   evaluate:
     cmd: python src/evaluate.py --out reports --fixtures-gt tests/fixtures/gt 
