@@ -41,7 +41,7 @@
 </td><td colspan="1" rowspan="1"><p>Parts 0, 5</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><strong>Text accuracy</strong></p>
-</td><td colspan="1" rowspan="1"><p>1.67% word error rate (pdfplumber) on 16 hand-typed pages</p>
+</td><td colspan="1" rowspan="1"><p>1.91% word error rate (pdfplumber) on 18 hand-typed pages across all six page types</p>
 </td><td colspan="1" rowspan="1"><p>Part 9</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><strong>Table accuracy</strong></p>
@@ -49,7 +49,7 @@
 </td><td colspan="1" rowspan="1"><p>Part 9</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><strong>Validated against XBRL</strong></p>
-</td><td colspan="1" rowspan="1"><p>456 of 456 statement numbers match the filing&#39;s own XBRL (100%)</p>
+</td><td colspan="1" rowspan="1"><p>456 of 456 statement numbers match the filing&#39;s own XBRL (100%); Docling 450 of 452</p>
 </td><td colspan="1" rowspan="1"><p>Part 11</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><strong>Build vs buy</strong></p>
@@ -57,7 +57,7 @@
 </td><td colspan="1" rowspan="1"><p>Parts 7, 10</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><strong>Reproducible</strong></p>
-</td><td colspan="1" rowspan="1"><p>a fresh clone rebuilds everything with <code>dvc pull</code>; <code>dvc repro</code> skips all 9 stages; 65 tests pass</p>
+</td><td colspan="1" rowspan="1"><p>a fresh clone rebuilds everything with <code>dvc pull</code>; <code>dvc repro</code> skips every stage; 65 tests pass</p>
 </td><td colspan="1" rowspan="1"><p>Part 8</p>
 </td></tr>
 </table>
@@ -79,7 +79,7 @@
 </td><td colspan="1" rowspan="1"><p>LayoutParser finds the blocks on each page and routes each one to the right extractor; a fallback keeps every word the model misses.</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><strong>Docling</strong> (Part 4)</p>
-</td><td colspan="1" rowspan="1"><p>A second, independent parsing path, used to compare and as a fallback for layouts the traditional path handles badly.</p>
+</td><td colspan="1" rowspan="1"><p>A second, independent parsing path: exact on tables (cell F1 1.0), used as a cross-check of the statements and for form-like pages.</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><strong>Corpus</strong> (Parts 5–6)</p>
 </td><td colspan="1" rowspan="1"><p>1,705 records, each validated by a pydantic schema and carrying its page and bounding box. JSONL is the source of truth; section Markdown, with a provenance comment before every block, feeds retrieval.</p>
@@ -87,17 +87,20 @@
 <tr><td colspan="1" rowspan="1"><p><strong>Build vs buy</strong> (Part 7)</p>
 </td><td colspan="1" rowspan="1"><p>AWS Textract runs as an optional, cached fallback, off by default, so the pipeline needs no cloud credentials.</p>
 </td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>App</strong></p>
+</td><td colspan="1" rowspan="1"><p>A Streamlit UI over a read-only FastAPI backend on AWS EC2: browse every page with its layout blocks, and trace any number to its page, bbox, JSONL record and Markdown line.</p>
+</td></tr>
 <tr><td colspan="1" rowspan="1"><p><strong>Pipeline</strong> (Part 8)</p>
-</td><td colspan="1" rowspan="1"><p>Nine DVC stages with every output hash in <code>dvc.lock</code>, data on a public-read S3 remote, and a CI smoke test on every pull request.</p>
+</td><td colspan="1" rowspan="1"><p>The brief&#39;s nine DVC stages plus <code>parse_fixtures</code>, with every output hash in <code>dvc.lock</code>, data on a public-read S3 remote, and a CI smoke test on every pull request.</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><strong>Evaluation</strong> (Part 9)</p>
-</td><td colspan="1" rowspan="1"><p>Scores every path against 18 hand-typed pages and two double-keyed statements, with regression tests that fail when a parser breaks.</p>
+</td><td colspan="1" rowspan="1"><p>Scores every path against 18 hand-typed pages in six strata and two double-keyed statements, with regression tests that fail when a parser breaks.</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><strong>Benchmarks</strong> (Part 10)</p>
 </td><td colspan="1" rowspan="1"><p>Times every stage per page and turns that into a yearly cost, open source vs managed.</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><strong>XBRL validation</strong> (Part 11)</p>
-</td><td colspan="1" rowspan="1"><p>Loads the filings&#39; own XBRL with Arelle, maps each table row to its concept, and checks every number.</p>
+</td><td colspan="1" rowspan="1"><p>Loads the filings&#39; own XBRL with Arelle (875 unique facts per filing), maps each table row to its concept, and checks every number.</p>
 </td></tr>
 </table>
 <h2 is-upgraded>Team</h2>
@@ -596,8 +599,8 @@ python src/tables.py --input tests/fixtures --output /tmp/tables_fixture
       <google-codelab-step label="Part 4: Docling path and comparison" duration="8">
         <p>The <code>parse_docling</code> stage converts every rendered PDF with Docling, as an alternative path next to the traditional one (not a replacement).</p>
 <h2 is-upgraded>What it writes</h2>
-<p><code>src/docling_parse.py</code> (run as <code>python -m src.docling_parse</code>, because the file name clashes with Docling&#39;s own <code>docling_parse</code> package) writes to <code>data/docling/</code>: Markdown, lossless JSON, every table as CSV, per-page Markdown (<code>export_to_markdown(page_no=n)</code>, which Part 9 needs for WER), and <code>{stem}.items.jsonl</code>.</p>
-<p>Docling writes bounding boxes with a bottom-left origin. Before any comparison, the stage converts them with <code>bbox.to_top_left_origin(page_height)</code> into <code>items.jsonl</code> (points, top-left), so they match our schema. The lossless JSON is left untouched.</p>
+<p><code>src/docling_parse.py</code> writes to <code>data/docling/</code>: Markdown, lossless JSON, every table as CSV, per-page Markdown (<code>export_to_markdown(page_no=n)</code>, which Part 9 needs for WER), and <code>{stem}.items.jsonl</code>. It must be run as a module, <code>python -m src.docling_parse</code>, as its DVC stage does: running the file directly fails, because its name shadows Docling&#39;s own <code>docling_parse</code> package.</p>
+<p>Docling writes bounding boxes with a bottom-left origin. <code>items.jsonl</code> holds one record per item with boxes converted by <code>bbox.to_top_left_origin(page_height)</code> to the schema&#39;s top-left origin in points, and every comparison uses this file. The lossless JSON is kept exactly as Docling wrote it.</p>
 <p>Setup: Docling 2.134.0, <code>do_ocr: false</code>, TableFormer <code>accurate</code> (from <code>params.yaml</code>).</p>
 <h2 is-upgraded>Run it</h2>
 <pre><code language="language-bash" class="language-bash">dvc repro parse_docling
@@ -610,14 +613,14 @@ python src/tables.py --input tests/fixtures --output /tmp/tables_fixture
 </td><td colspan="1" rowspan="1"><p>Docling</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Text accuracy</p>
-</td><td colspan="1" rowspan="1"><p>WER, 16 ground-truth pages</p>
-</td><td colspan="1" rowspan="1"><p><strong>1.67%</strong></p>
-</td><td colspan="1" rowspan="1"><p>6.32%</p>
+</td><td colspan="1" rowspan="1"><p>WER, 18 ground-truth pages</p>
+</td><td colspan="1" rowspan="1"><p><strong>1.91%</strong> (pdfplumber)</p>
+</td><td colspan="1" rowspan="1"><p>11.71%</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Numeric fidelity (text)</p>
 </td><td colspan="1" rowspan="1"><p>numeric-token recall</p>
-</td><td colspan="1" rowspan="1"><p><strong>99.48%</strong></p>
-</td><td colspan="1" rowspan="1"><p>87.43%</p>
+</td><td colspan="1" rowspan="1"><p><strong>99.54%</strong></p>
+</td><td colspan="1" rowspan="1"><p>83.18%</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Table structure</p>
 </td><td colspan="1" rowspan="1"><p>cell F1, 2 tables, 111 cells</p>
@@ -626,18 +629,23 @@ python src/tables.py --input tests/fixtures --output /tmp/tables_fixture
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Numeric fidelity (statements)</p>
 </td><td colspan="1" rowspan="1"><p>XBRL match rate</p>
-</td><td colspan="1" rowspan="1"><p><strong>456/456</strong></p>
-</td><td colspan="1" rowspan="1"><p>450/450</p>
+</td><td colspan="1" rowspan="1"><p><strong>456 / 456 (100%)</strong></p>
+</td><td colspan="1" rowspan="1"><p>450 / 452 (99.6%)</p>
 </td></tr>
-<tr><td colspan="1" rowspan="1"><p>Reading order (cover pages)</p>
-</td><td colspan="1" rowspan="1"><p>WER</p>
-</td><td colspan="1" rowspan="1"><p>3.74% pdfplumber, 59.87% layout-routed</p>
-</td><td colspan="1" rowspan="1"><p><strong>6.90%</strong></p>
+<tr><td colspan="1" rowspan="1"><p>Reading order</p>
+</td><td colspan="1" rowspan="1"><p>WER, multi-column page</p>
+</td><td colspan="1" rowspan="1"><p>7.62% pdfplumber, <strong>3.15%</strong> layout-routed</p>
+</td><td colspan="1" rowspan="1"><p>9.60%</p>
 </td></tr>
-<tr><td colspan="1" rowspan="1"><p>Footnotes</p>
-</td><td colspan="1" rowspan="1"><p>separate labels</p>
-</td><td colspan="1" rowspan="1"><p>none</p>
-</td><td colspan="1" rowspan="1"><p><strong>footnote, caption</strong></p>
+<tr><td colspan="1" rowspan="1"><p>Reading order</p>
+</td><td colspan="1" rowspan="1"><p>WER, cover pages</p>
+</td><td colspan="1" rowspan="1"><p><strong>3.74%</strong> pdfplumber, 59.87% layout-routed</p>
+</td><td colspan="1" rowspan="1"><p>6.90%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Scanned pages</p>
+</td><td colspan="1" rowspan="1"><p>WER, scanned fixture</p>
+</td><td colspan="1" rowspan="1"><p><strong>0.00%</strong> pdfplumber + OCR</p>
+</td><td colspan="1" rowspan="1"><p>100% (no text, <code>do_ocr: false</code>)</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Throughput</p>
 </td><td colspan="1" rowspan="1"><p>s/page, p50 / p95</p>
@@ -646,13 +654,25 @@ python src/tables.py --input tests/fixtures --output /tmp/tables_fixture
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Memory</p>
 </td><td colspan="1" rowspan="1"><p>peak RSS</p>
-</td><td colspan="1" rowspan="1"><p><strong>1,055 MiB</strong></p>
+</td><td colspan="1" rowspan="1"><p><strong>1,055 MiB</strong> (layout stage)</p>
 </td><td colspan="1" rowspan="1"><p>3,597 MiB</p>
 </td></tr>
+<tr><td colspan="1" rowspan="1"><p>Cost</p>
+</td><td colspan="1" rowspan="1"><p>USD/year at 5,000 filings, p50</p>
+</td><td colspan="1" rowspan="1"><p><strong>$5.63</strong></p>
+</td><td colspan="1" rowspan="1"><p>$36.35</p>
+</td></tr>
 </table>
-<p>Every number either path extracted matches XBRL. The difference is coverage: in both filings, Docling merged the first cash-flow row (&#34;Cash, cash equivalents ... beginning balances&#34;) into the column header, so 6 numbers never became data cells. The traditional path extracted that row.</p>
+<p>Findings:</p>
+<ul>
+<li><strong>Text:</strong> Docling&#39;s 11.71% WER has two measured sources: the scanned page, where it produced no text at all, and statement pages (9.87% vs 1.67%), where its per-page Markdown wraps rows in table syntax. On prose and notes the gap is small.</li>
+<li><strong>Scanned pages:</strong> we run Docling without OCR, because no rendered EDGAR page needs it (0 of 121 pages triggered in Part 1). On the image-only fixture, Docling returns nothing, while the traditional path&#39;s OCR trigger fires and Tesseract recovers the text.</li>
+<li><strong>Reading order:</strong> on the multi-column page, LayoutParser routing reads the columns in the right order (3.15%), better than both pdfplumber and Docling. On the cover, the result reverses: Docling (6.90%) is far better than layout routing (59.87%). Each of these strata has only 1–2 pages, so these are indications, not general results.</li>
+<li><strong>XBRL:</strong> every number either path extracted matches XBRL. The difference is coverage: in both filings, Docling merged the first cash-flow row (&#34;Cash, cash equivalents ... beginning balances&#34;) into the column header. That is 6 printed numbers but 2 distinct XBRL facts, because each year&#39;s beginning cash is the previous year&#39;s ending cash, which Docling did capture. Hence 450 / 452.</li>
+<li><strong>Footnotes:</strong> our filings have no footnotes (checked manually), so this dimension cannot separate the two paths.</li>
+</ul>
 <h2 is-upgraded>PDF vs HTML</h2>
-<p>The same filing (FY2024), converted from the original iXBRL HTML and from the rendered PDF:</p>
+<p>The same filing (FY2024), converted from the original iXBRL HTML and from the rendered PDF in the same run (<code>data/docling/timing.csv</code>):</p>
 <table>
 <tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>Rendered PDF</p>
 </td><td colspan="1" rowspan="1"><p>iXBRL HTML</p>
@@ -662,17 +682,17 @@ python src/tables.py --input tests/fixtures --output /tmp/tables_fixture
 </td><td colspan="1" rowspan="1"><p>63</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Conversion time</p>
-</td><td colspan="1" rowspan="1"><p>380–966 s</p>
-</td><td colspan="1" rowspan="1"><p>39–97 s</p>
+</td><td colspan="1" rowspan="1"><p>965.9 s</p>
+</td><td colspan="1" rowspan="1"><p>96.8 s</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Pages and bboxes</p>
 </td><td colspan="1" rowspan="1"><p>yes (60 pages)</p>
 </td><td colspan="1" rowspan="1"><p>none</p>
 </td></tr>
 </table>
-<p>HTML finds more tables and is about 10× faster, but has no pages or boxes, so it cannot support the page-and-bbox citations the brief requires. Rendering changes table boundaries, not table content.</p>
+<p>HTML finds 12 more tables and converts 10× faster, because it skips the layout model and TableFormer. But it has no pages or boxes, so it cannot support the page-and-bbox citations the brief requires. It is useful as a cross-check of table content, not as the source of truth.</p>
 <h2 is-upgraded>Recommendation</h2>
-<p>Keep the <strong>traditional pipeline as the primary path</strong>: lowest WER (1.7% vs 6.3%), highest numeric recall (99.5% vs 87.4%), all 456 statement numbers matched to XBRL including the cash-flow row Docling dropped, and about 6× less compute. Use <strong>Docling as the fallback</strong> where the traditional path is weak: side-by-side layouts (cover-page WER 6.9% vs 59.9% for layout-routed text), footnote separation, and as an independent second reading of statement tables. The full comparison is in <code>reports/docling_comparison.md</code>.</p>
+<p>Keep the <strong>traditional pipeline as the primary path</strong>: on 18 ground-truth pages it has the lowest WER (1.9% vs 11.7%) and the highest numeric recall (99.5% vs 83.2%), it matched XBRL on all 456 statement numbers including the cash-flow row Docling dropped, its OCR fallback handles scanned pages that Docling without OCR returns empty, and it costs about 6× less compute. Use <strong>Docling as the fallback and cross-check</strong>: as an independent second reading of statement tables (both paths agreed cell for cell, F1 1.00), and for pages with side-by-side fields like the cover, where it is far better than our layout routing. The full comparison is in <code>reports/docling_comparison.md</code>.</p>
 <p class="image-container"><img alt="A statement table, Docling vs traditional" src="img/f9c12f5c4c53a9d9.png"></p>
 
 
@@ -1046,6 +1066,7 @@ ls reports/managed/
 <h2 is-upgraded>The stages</h2>
 <p>The brief&#39;s nine canonical stages:</p>
 <p><code>download</code> → <code>render</code> → <code>parse_pdfplumber</code>, <code>tables</code>, <code>layout</code>, <code>parse_docling</code> → <code>export</code> → <code>xbrl</code> → <code>evaluate</code></p>
+<p>plus one extra stage, <strong><code>parse_fixtures</code></strong>, which runs every extraction path (pdfplumber with the OCR fallback, layout and Docling) on the scanned and multi-column fixtures, so Part 9 can score those two strata like the filing pages. The brief requires the nine names; extra stages are allowed.</p>
 <p>Three folders are inputs rather than stage outputs, so they are tracked with <code>dvc add</code>:</p>
 <table>
 <tr><td colspan="1" rowspan="1"><p>Pointer file</p>
@@ -1094,8 +1115,8 @@ dvc push -r store
 <h2 is-upgraded>Results</h2>
 <p>On a fresh clone of <code>main</code>:</p>
 <ul>
-<li><code>dvc pull</code> fetched all 12 data folders with no errors.</li>
-<li><code>dvc repro</code> skipped all 9 stages and both pointer files: a second run with no changes skips everything, as the brief requires.</li>
+<li><code>dvc pull</code> fetched every data folder with no errors.</li>
+<li><code>dvc repro</code> skipped every stage and pointer file: a second run with no changes skips everything, as the brief requires.</li>
 <li><code>dvc metrics show</code> read <code>reports/metrics.json</code>, and <code>pytest -q</code> passed 65 tests.</li>
 </ul>
 <aside class="warning"><p> A lesson from building this: our <code>.gitignore</code> used <code>data/*</code> with <code>!data/*.dvc</code>. Git read it correctly, but DVC&#39;s own Git library treated the whole <code>data/</code> folder as ignored, so a plain <code>dvc pull</code> silently skipped <code>data/managed</code>, the first standalone pointer file. Listing each data folder explicitly (<code>/data/raw/</code>, <code>/data/managed/</code> ...) fixed it, verified on a fresh clone. </p>
@@ -1107,7 +1128,7 @@ dvc push -r store
       <google-codelab-step label="Part 9: Evaluation and regression tests" duration="8">
         <p>The <code>evaluate</code> stage scores every extraction path against a hand-typed answer key.</p>
 <h2 is-upgraded>Ground truth</h2>
-<p><code>data/ground_truth/</code> (tracked with <code>data/ground_truth.dvc</code>), with fixture copies in <code>tests/fixtures/gt/</code> for CI. <strong>18 pages: 8 per filing, plus 2 fixtures:</strong></p>
+<p><strong>10 pages per filing across the six strata the brief lists (18 distinct pages).</strong> Filing pages are in <code>data/ground_truth/</code> (tracked with <code>data/ground_truth.dvc</code>); fixture pages are in <code>tests/fixtures/gt/</code> (in Git), read directly by the evaluation and by CI.</p>
 <table>
 <tr><td colspan="1" rowspan="1"><p>Stratum</p>
 </td><td colspan="1" rowspan="1"><p>FY2025</p>
@@ -1136,35 +1157,35 @@ dvc push -r store
 </td><td colspan="2" rowspan="1"><p><code>scanned.pdf</code> fixture, page 1 (shared)</p>
 </td><td colspan="1" rowspan="1"></td></tr>
 </table>
-<p>The filings contain no multi-column or scanned page, so those two strata use the Part 0 fixtures, as the brief allows.</p>
-<p><strong>How the pages were made:</strong> typed from the rendered page image, or &#34;html-assisted&#34; (copied from the original HTML filing, a different source from the PDF text layer the parsers read, then corrected against the page image). The method for every page is in <code>data/ground_truth/pages.csv</code>. <strong>No ground truth was made from parser output.</strong> The rules are in <code>reports/ground_truth_conventions.md</code>.</p>
+<p>The filings contain no multi-column or scanned page, so those strata use the Part 0 fixtures, shared by both filings, as the brief allows. The <code>parse_fixtures</code> stage runs every extraction path on them, so they are scored exactly like the filing pages.</p>
+<p><strong>How the pages were made:</strong> typed from the rendered page image, or &#34;html-assisted&#34; (copied from the original HTML filing, a different source from the PDF text layer the parsers read, then corrected against the page image). The method for every page is in <code>pages.csv</code>. <strong>No ground truth was made from parser output.</strong> The rules are in <code>reports/ground_truth_conventions.md</code>.</p>
 <p><strong>Tables:</strong> the FY2025 income statement and balance sheet (111 cells) were keyed by two people independently. They agreed on 110 of 111 cells (F1 0.991). The one difference, a digit transposition in the 2024 diluted share count (15,048,095 vs 15,408,095), was resolved against the page image: 15,408,095.</p>
 <h2 is-upgraded>Run it</h2>
 <pre><code language="language-bash" class="language-bash">dvc repro evaluate
 dvc metrics show
 </code></pre>
 <p>Both sides of every comparison get the same normalization: Unicode NFKC, curly quotes to straight, dashes to &#34;-&#34;, &#34;$&#34; separated, whitespace collapsed, lowercase. <strong>Punctuation is kept</strong>, so a lost sign such as (321) becoming 321 counts as an error. Tables are compared as (row label, year, occurrence) → value, so tables of different shapes are compared fairly.</p>
-<h2 is-upgraded>Results on the filings (16 pages)</h2>
+<h2 is-upgraded>Results (18 pages)</h2>
 <table>
 <tr><td colspan="1" rowspan="1"><p>Source</p>
 </td><td colspan="1" rowspan="1"><p>WER</p>
 </td><td colspan="1" rowspan="1"><p>CER</p>
 </td><td colspan="1" rowspan="1"><p>Numeric recall</p>
 </td></tr>
-<tr><td colspan="1" rowspan="1"><p>pdfplumber</p>
-</td><td colspan="1" rowspan="1"><p><strong>1.67%</strong></p>
-</td><td colspan="1" rowspan="1"><p><strong>1.54%</strong></p>
+<tr><td colspan="1" rowspan="1"><p>pdfplumber (with OCR fallback)</p>
+</td><td colspan="1" rowspan="1"><p><strong>1.91%</strong></p>
+</td><td colspan="1" rowspan="1"><p><strong>1.76%</strong></p>
 </td><td colspan="1" rowspan="1"><p><strong>99.5%</strong></p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Docling</p>
-</td><td colspan="1" rowspan="1"><p>6.32%</p>
-</td><td colspan="1" rowspan="1"><p>4.27%</p>
-</td><td colspan="1" rowspan="1"><p>87.4%</p>
+</td><td colspan="1" rowspan="1"><p>11.71%</p>
+</td><td colspan="1" rowspan="1"><p>9.72%</p>
+</td><td colspan="1" rowspan="1"><p>83.2%</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>layout</p>
-</td><td colspan="1" rowspan="1"><p>12.30%</p>
-</td><td colspan="1" rowspan="1"><p>10.89%</p>
-</td><td colspan="1" rowspan="1"><p>99.5%</p>
+</td><td colspan="1" rowspan="1"><p>12.37%</p>
+</td><td colspan="1" rowspan="1"><p>10.88%</p>
+</td><td colspan="1" rowspan="1"><p>96.7%</p>
 </td></tr>
 </table>
 <p>WER per stratum:</p>
@@ -1175,48 +1196,43 @@ dvc metrics show
 </td><td colspan="1" rowspan="1"><p>layout</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Statements (6)</p>
-</td><td colspan="1" rowspan="1"><p>1.67%</p>
+</td><td colspan="1" rowspan="1"><p><strong>1.67%</strong></p>
 </td><td colspan="1" rowspan="1"><p>9.87%</p>
 </td><td colspan="1" rowspan="1"><p>4.74%</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Notes (4)</p>
-</td><td colspan="1" rowspan="1"><p>2.20%</p>
+</td><td colspan="1" rowspan="1"><p><strong>2.20%</strong></p>
 </td><td colspan="1" rowspan="1"><p>2.98%</p>
 </td><td colspan="1" rowspan="1"><p>6.78%</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Prose (4)</p>
-</td><td colspan="1" rowspan="1"><p>0.11%</p>
+</td><td colspan="1" rowspan="1"><p><strong>0.11%</strong></p>
 </td><td colspan="1" rowspan="1"><p>4.05%</p>
 </td><td colspan="1" rowspan="1"><p>5.37%</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Cover (2)</p>
-</td><td colspan="1" rowspan="1"><p>3.74%</p>
+</td><td colspan="1" rowspan="1"><p><strong>3.74%</strong></p>
 </td><td colspan="1" rowspan="1"><p>6.90%</p>
-</td><td colspan="1" rowspan="1"><p><strong>59.87%</strong></p>
+</td><td colspan="1" rowspan="1"><p>59.87%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Multi-column (1, fixture)</p>
+</td><td colspan="1" rowspan="1"><p>7.62%</p>
+</td><td colspan="1" rowspan="1"><p>9.60%</p>
+</td><td colspan="1" rowspan="1"><p><strong>3.15%</strong></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Scanned (1, fixture)</p>
+</td><td colspan="1" rowspan="1"><p><strong>0.00%</strong></p>
+</td><td colspan="1" rowspan="1"><p>100.00%</p>
+</td><td colspan="1" rowspan="1"><p>22.79%</p>
 </td></tr>
 </table>
 <p>Tables (111 double-keyed cells): <strong>F1 1.0</strong> for both the traditional path and Docling.</p>
-<p>Fixtures (pdfplumber with the OCR fallback, as run in CI):</p>
-<table>
-<tr><td colspan="1" rowspan="1"><p>Fixture</p>
-</td><td colspan="1" rowspan="1"><p>WER</p>
-</td></tr>
-<tr><td colspan="1" rowspan="1"><p>Statement (FY2025 p32)</p>
-</td><td colspan="1" rowspan="1"><p>2.27%</p>
-</td></tr>
-<tr><td colspan="1" rowspan="1"><p>Multi-column</p>
-</td><td colspan="1" rowspan="1"><p>7.62%</p>
-</td></tr>
-<tr><td colspan="1" rowspan="1"><p>Scanned (OCR)</p>
-</td><td colspan="1" rowspan="1"><p>0.00%</p>
-</td></tr>
-</table>
 <h2 is-upgraded>Findings</h2>
 <ol type="1">
-<li><strong>pdfplumber reads text best on every stratum:</strong> it reads the text layer directly, with no model between the page and the words.</li>
-<li><strong>Docling misses about 13% of a page&#39;s numbers</strong> (numeric recall 87.4%), most on statements. Part 11 found one cause: Docling merged the first cash-flow row into the column header. Where it does find tables, they are exact (F1 1.0).</li>
-<li><strong>Layout&#39;s reading order is weak on form-like pages:</strong> 60% WER on the cover, where the Part 3 audit found page-sized low-confidence Table and Figure boxes. On statements, notes and prose it stays at 5–7%, with every number present.</li>
-<li><strong>Multi-column is pdfplumber&#39;s hardest stratum</strong> (7.6%): it reads straight across the two side-by-side tables, interleaving their rows, while the ground truth reads the left table, then the right.</li>
+<li><strong>pdfplumber reads text best on five of six strata:</strong> it reads the text layer directly, and its OCR fallback reads the scanned page perfectly.</li>
+<li><strong>Multi-column is where layout earns its place:</strong> 3.2% vs pdfplumber&#39;s 7.6%. pdfplumber reads straight across the two side-by-side tables and interleaves their rows; layout&#39;s column-aware reading order reads the left table, then the right.</li>
+<li><strong>Docling cannot read a scanned page in our setup (100% WER):</strong> it runs without OCR, so an image-only page yields no text. This is exactly the case the traditional path&#39;s OCR fallback exists for. Docling also misses numbers (numeric recall 83%): Part 11 found one cause, a cash-flow row merged into the table header. Its tables, where it finds them, are exact.</li>
+<li><strong>Layout breaks on form-like pages:</strong> 60% WER on the cover, where the Part 3 audit found page-sized low-confidence Table and Figure boxes, and 23% on the scanned page, where each detected block is OCR&#39;d separately, which is less accurate than OCR on the whole page.</li>
 <li><strong>OCR scored 0.0 WER on the scanned fixture</strong> (544 words). The image is a clean digital render, so this is a best case for Tesseract, not a typical one.</li>
 <li><strong>Evaluation found a Part 4 bug:</strong> Docling&#39;s per-page Markdown was shifted by one page (its p32 file held p31). Its WER was 90% until the fix; the numbers above are after it.</li>
 </ol>
@@ -1276,8 +1292,54 @@ E       AssertionError: table cell F1 0.0000 is below 0.98
 </table>
 <p>The drop is concentrated in 1- and 2-word blocks: clipped words joining their paragraph instead of standing alone.</p>
 <p class="image-container"><img alt="Drift signal for two pipeline versions" src="img/eaeeb996e1ec5668.png"></p>
-<p><code>dvc metrics diff</code> compares <code>reports/metrics.json</code> with another branch; its output is in <code>reports/eval.md</code>.</p>
-<aside class="warning"><p> Limits: 16 filing pages and two fixtures, with only two tables double-keyed. The multi-column and scanned strata use fixtures, and the scan is a clean render. Fixture metrics cover pdfplumber only, since CI does not run layout or Docling. </p>
+<h2 is-upgraded>dvc metrics diff</h2>
+<p>Moving from 16 filing pages in 4 strata to 18 pages in all 6 strata, <code>dvc metrics diff main</code> showed the effect directly (selected rows):</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Metric</p>
+</td><td colspan="1" rowspan="1"><p>Before</p>
+</td><td colspan="1" rowspan="1"><p>After</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>text.pdfplumber.wer</code></p>
+</td><td colspan="1" rowspan="1"><p>0.0167</p>
+</td><td colspan="1" rowspan="1"><p>0.0191</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>text.docling.wer</code></p>
+</td><td colspan="1" rowspan="1"><p>0.0632</p>
+</td><td colspan="1" rowspan="1"><p>0.1171</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>text.docling.numeric_recall</code></p>
+</td><td colspan="1" rowspan="1"><p>0.8743</p>
+</td><td colspan="1" rowspan="1"><p>0.8318</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>text.layout.numeric_recall</code></p>
+</td><td colspan="1" rowspan="1"><p>0.9948</p>
+</td><td colspan="1" rowspan="1"><p>0.9667</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>text.*.pages</code></p>
+</td><td colspan="1" rowspan="1"><p>16</p>
+</td><td colspan="1" rowspan="1"><p>18</p>
+</td></tr>
+</table>
+<p>The full output, including the new <code>multicolumn</code> and <code>scanned</code> keys, is in <code>reports/eval.md</code>.</p>
+<h2 is-upgraded>Challenges</h2>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Problem</p>
+</td><td colspan="1" rowspan="1"><p>Fix</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Docling&#39;s per-page files shifted by one page (90% WER)</p>
+</td><td colspan="1" rowspan="1"><p>fixed in <code>docling_parse.py</code> and its stage rerun</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Four pages listed twice in <code>pages.csv</code> (20 instead of 16)</p>
+</td><td colspan="1" rowspan="1"><p>file rewritten; the averages had been double-weighted</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>A page file named <code>p036</code> instead of <code>p0036</code></p>
+</td><td colspan="1" rowspan="1"><p>renamed; it had been silently skipped</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Fixture strata scored only in CI, pdfplumber only</p>
+</td><td colspan="1" rowspan="1"><p>the new <code>parse_fixtures</code> stage runs all three paths on the fixtures</p>
+</td></tr>
+</table>
+<aside class="warning"><p> Limits: 16 filing pages and two fixtures, with only two tables double-keyed. The multi-column and scanned strata have one page each, from fixtures, and the scan is a clean render. Docling runs without OCR here; with OCR enabled its scanned score would change. </p>
 </aside>
 
 
@@ -1409,7 +1471,7 @@ python src/bench.py --summarize
 <li><strong>Docling:</strong> Part 4&#39;s table CSVs, scaled with Part 2&#39;s normalizer and the page caption.</li>
 <li><strong>Statements:</strong> income, comprehensive income, balance sheet, cash flows. The statement of shareholders&#39; equity is out of scope: it is a grid of equity components tagged with dimensions, not a label-by-year table.</li>
 </ul>
-<p><code>src/xbrl.py</code> loads each unpacked iXBRL filing with <strong>Arelle</strong>: 957 numeric facts in <code>aapl-20240928.htm</code> and 962 in <code>aapl-20250927.htm</code>. Arelle reports a period ending September 27 as midnight on September 28, so one day is subtracted from every end date before matching.</p>
+<p><code>src/xbrl.py</code> loads each unpacked iXBRL filing with <strong>Arelle</strong>. iXBRL tags the same fact wherever it is printed, so duplicates (same concept, dimensions, period, unit and value) are dropped: 957 and 962 tagged numeric facts become <strong>875 unique facts per filing</strong>. Arelle reports a period ending September 27 as midnight on September 28, so one day is subtracted from every end date before matching.</p>
 <h2 is-upgraded>Method</h2>
 <p><strong>Label to concept</strong>, in order, with the method recorded for every line:</p>
 <ol type="1">
@@ -1417,12 +1479,41 @@ python src/bench.py --summarize
 <li><strong>Label linkbase:</strong> the filing&#39;s own labels, all roles.</li>
 <li><strong>Fuzzy:</strong> a close spelling match (<code>xbrl.fuzzy_cutoff: 0.88</code>).</li>
 </ol>
-<p>Ambiguity is resolved by <strong>period type</strong>: a balance sheet line is a balance at a date (an instant concept), and a flow statement line is a change over the year (a duration concept).</p>
-<p><strong>Comparison:</strong> the tolerance comes from the fact&#39;s <code>decimals</code> (<code>-6</code> gives ±0.5 million). Each line gets a status: <code>match</code>, <code>match_negated</code> (the same amount printed with a negated label, such as an outflow in parentheses that XBRL stores as positive), <code>sign</code>, <code>scale_xN</code>, <code>mismatch</code>, <code>xbrl_missing</code> or <code>unmapped</code>.</p>
+<p>Ambiguity is resolved by <strong>period type</strong>: a balance sheet line is a balance at a date (an instant concept), and a flow statement line is a change over the year (a duration concept). Beginning and ending cash inside the cash-flow statement use the concept&#39;s own period type, with beginning balances matched at the prior year end.</p>
+<p><strong>Comparison:</strong> the tolerance comes from the fact&#39;s <code>decimals</code> (<code>-6</code> gives ±0.5 million).</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Status</p>
+</td><td colspan="1" rowspan="1"><p>Meaning</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>match</code></p>
+</td><td colspan="1" rowspan="1"><p>equal within the tolerance</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>match_negated</code></p>
+</td><td colspan="1" rowspan="1"><p>the same amount, printed with a negated label (an outflow in parentheses that XBRL stores as positive)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>sign</code></p>
+</td><td colspan="1" rowspan="1"><p>the same size, opposite sign</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>scale_xN</code></p>
+</td><td colspan="1" rowspan="1"><p>off by exactly a factor of N</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>mismatch</code></p>
+</td><td colspan="1" rowspan="1"><p>a different value</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>xbrl_missing</code></p>
+</td><td colspan="1" rowspan="1"><p>concept found, but no fact for that period and dimensions</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>unmapped</code></p>
+</td><td colspan="1" rowspan="1"><p>no concept found for the label</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>pdf_missing</code></p>
+</td><td colspan="1" rowspan="1"><p>a fact the other path extracted and validated, missing from this path</p>
+</td></tr>
+</table>
 <h2 is-upgraded>Run it</h2>
 <pre><code language="language-bash" class="language-bash">dvc repro xbrl
 </code></pre>
-<p>Outputs: <code>data/xbrl/facts.csv</code>, <code>comparison.csv</code> and <code>summary.json</code>, plus <code>notebooks/xbrl_validation.ipynb</code>.</p>
+<p>Outputs: <code>data/xbrl/facts.csv</code>, <code>comparison.csv</code> and <code>summary.json</code>, plus <code>notebooks/xbrl_validation.ipynb</code>. In <code>comparison.csv</code>, <code>pdf_missing</code> rows have an empty value field.</p>
 <h2 is-upgraded>Results</h2>
 <table>
 <tr><td colspan="1" rowspan="1"><p>Statement</p>
@@ -1443,17 +1534,17 @@ python src/bench.py --summarize
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p>Cash flows</p>
 </td><td colspan="1" rowspan="1"><p>174 / 174</p>
-</td><td colspan="1" rowspan="1"><p>168 / 168</p>
+</td><td colspan="1" rowspan="1"><p>168 / 170 (2 <code>pdf_missing</code>)</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><strong>All</strong></p>
 </td><td colspan="1" rowspan="1"><p><strong>456 / 456 (100%)</strong></p>
-</td><td colspan="1" rowspan="1"><p><strong>450 / 450 (100%)</strong></p>
+</td><td colspan="1" rowspan="1"><p><strong>450 / 452 (99.6%)</strong></p>
 </td></tr>
 </table>
-<p>Of these, 84 per path are <code>match_negated</code> (72 in cash flows, 12 in comprehensive income). <strong>No number on either path is a mismatch, a sign error or a scale error.</strong></p>
+<p>Of the matches, 84 per path are <code>match_negated</code> (72 in cash flows, 12 in comprehensive income). <strong>No number on either path is a mismatch, a sign error or a scale error.</strong></p>
 <p class="image-container"><img alt="XBRL comparison, FY2025 income statement" src="img/eb77b6fa98d3f0c7.png"></p>
-<h2 is-upgraded>How we got there: two runs</h2>
-<p><strong>Run 1, automatic mapping only</strong> (the linkbase and fuzzy tiers, with a minimal curated map):</p>
+<h2 is-upgraded>How we got there</h2>
+<p><strong>Run 1, automatic mapping only</strong> (the linkbase and fuzzy tiers, with a minimal curated map; before the de-duplication and the <code>pdf_missing</code> status were added):</p>
 <table>
 <tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>Traditional</p>
 </td><td colspan="1" rowspan="1"><p>Docling</p>
@@ -1514,19 +1605,97 @@ python src/bench.py --summarize
 </td><td colspan="1" rowspan="1"><p>compare the plain value first; accept the opposite sign only for negated presentations</p>
 </td></tr>
 </table>
-<p><strong>Run 2,</strong> after these fixes: 100% on both paths.</p>
+<p><strong>Final run:</strong> after these fixes, every extracted number on both paths matches. The only remaining non-matches are Docling&#39;s 2 <code>pdf_missing</code> facts.</p>
 <h2 is-upgraded>Traditional vs Docling</h2>
-<p>Both paths extracted every number they found correctly. The difference is coverage: <strong>Docling&#39;s cash-flow tables lost the first row</strong> (&#34;Cash, cash equivalents, and restricted cash and cash equivalents, beginning balances&#34;) in both filings, 6 numbers. Its table model merged that row into the column header (<code>Years ended.September 27, 2025 $ 29,943</code> in one header cell), so the row&#39;s numbers never became data cells. The traditional path extracted the row in both filings.</p>
+<p>Both paths extracted every number they found correctly. The difference is coverage: <strong>Docling&#39;s cash-flow tables lost the first row</strong> (&#34;Cash, cash equivalents, and restricted cash and cash equivalents, beginning balances&#34;) in both filings. Its table model merged that row into the column header (<code>Years ended.September 27, 2025 $ 29,943</code> in one header cell of <code>AAPL_10K_20250927_pdf_p0036_t00.csv</code>), so the row&#39;s numbers never became data cells. The traditional path extracted the row in both filings.</p>
+<p><strong>Why 2 </strong></p>
+<p><strong><code>pdf_missing</code></strong></p>
+<p><strong> facts, not 6:</strong> a year&#39;s beginning cash is the same XBRL fact as the previous year&#39;s ending cash, which Docling did capture. Only the oldest beginning balance in each filing is a fact Docling never extracted anywhere. So Docling lost 6 printed numbers, but 2 distinct facts.</p>
 <aside class="warning"><p> Limits: the curated map was built by diagnosing these two filings, so a new company or year would need the same diagnosis (the automatic tiers carried 73% of numbers on their own here). The statement of shareholders&#39; equity and the note tables are not validated. </p>
 </aside>
 
 
       </google-codelab-step>
     
+      <google-codelab-step label="The LANTERN app: browse and trace the corpus" duration="6">
+        <p>The deployed app lets an analyst do in a browser what this Codelab does on the command line: browse every page with its layout blocks, search for a number, and follow it back to its page, bounding box, JSONL record and Markdown line.</p>
+<p><strong>Live: </strong><a href="http://52.15.107.141:8501/" target="_blank">http://52.15.107.141:8501/</a></p>
+<h2 is-upgraded>How it is built</h2>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Part</p>
+</td><td colspan="1" rowspan="1"><p>Code</p>
+</td><td colspan="1" rowspan="1"><p>What it does</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Backend</strong></p>
+</td><td colspan="1" rowspan="1"><p><code>app/api/main.py</code> (FastAPI)</p>
+</td><td colspan="1" rowspan="1"><p>A read-only API over the pipeline&#39;s outputs: <code>data/export</code> (the JSONL records and Markdown), <code>data/rendered</code> (the PDFs, rendered to page images on request) and <code>reports/</code>. It runs no pipeline stages. It listens only on <code>127.0.0.1:8000</code>, so it is not reachable from outside the server.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>UI</strong></p>
+</td><td colspan="1" rowspan="1"><p><code>app/ui/</code> (Streamlit)</p>
+</td><td colspan="1" rowspan="1"><p>Five pages that call the API. <code>lantern_api.py</code> is the shared client: API calls, the bbox overlay drawn on page images (bboxes are in PDF points, so they are scaled by DPI ÷ 72), and the zoomed crop around a block.</p>
+</td></tr>
+</table>
+<p>The API&#39;s endpoints are <code>/filings</code>, <code>/filings/{stem}/pages/{page}/records</code> and <code>/image</code>, <code>/filings/{stem}/tables</code>, <code>/filings/{stem}/records/{block_id}</code> (one record with its Markdown excerpt), <code>/search</code> and <code>/reports</code>.</p>
+<h2 is-upgraded>The pages</h2>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Page</p>
+</td><td colspan="1" rowspan="1"><p>What an analyst can do</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Home</strong></p>
+</td><td colspan="1" rowspan="1"><p>See both filings: accession, form, period, page and record counts, the block types extracted, and the manifest.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Explorer</strong></p>
+</td><td colspan="1" rowspan="1"><p>Pick a filing and a page, see the rendered page with every layout block drawn in its type&#39;s color, filter by block type, and highlight one block to see its full JSONL record.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Trace a fact</strong></p>
+</td><td colspan="1" rowspan="1"><p>Search any phrase or value across text and table cells (for example &#34;net income&#34;), pick a hit, and follow it end to end: the block zoomed and highlighted on the rendered page, its JSONL record, and its Markdown excerpt with the <code><!-- doc_id page block_id --></code> provenance comment. Each statement line&#39;s XBRL status is in the Reports page (<code>xbrl.md</code>).</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Tables</strong></p>
+</td><td colspan="1" rowspan="1"><p>Browse every extracted table: normalized values in full units next to the raw cell strings from the PDF, the extractor and the scale applied, with a CSV download.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Reports</strong></p>
+</td><td colspan="1" rowspan="1"><p>Read every report and evidence file, grouped by Part: Markdown rendered, CSVs as tables, JSON and plots shown in place.</p>
+</td></tr>
+</table>
+<p class="image-container"><img alt="Home page" src="img/18b628259c6b996.png"></p>
+<p class="image-container"><img alt="Trace a fact: net income from search to page, bbox, JSONL and Markdown" src="img/18b628259c6b996.png"></p>
+<p class="image-container"><img alt="Explorer: a page with its layout blocks" src="img/18b628259c6b996.png"></p>
+<h2 is-upgraded>Run it locally</h2>
+<p>From the repo root, after <code>dvc pull</code>:</p>
+<pre><code language="language-bash" class="language-bash">pip install -r app/requirements-app.txt
+uvicorn app.api.main:app --port 8000
+</code></pre>
+<p>Then, in a second terminal:</p>
+<pre><code language="language-bash" class="language-bash">LANTERN_API=http://127.0.0.1:8000 streamlit run app/ui/Home.py
+</code></pre>
+<p>Open <code>http://localhost:8501</code>.</p>
+<h2 is-upgraded>How it is deployed</h2>
+<table>
+<tr><td colspan="2" rowspan="1"></td><td colspan="1" rowspan="1"></td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Server</strong></p>
+</td><td colspan="1" rowspan="1"><p>AWS EC2 <code>t3.small</code>, <code>us-east-2a</code>, Ubuntu 24.04. The app only reads finished outputs and renders page images, so a small instance is enough: no parsing model runs on it.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Setup</strong> (<code>deploy/setup.sh</code>, once)</p>
+</td><td colspan="1" rowspan="1"><p>Installs Python 3.11, creates a venv, installs <code>app/requirements-app.txt</code>, pulls only the data the app needs (<code>dvc pull data/export data/rendered</code>, from the public remote, with no credentials), and installs and starts two systemd services.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Services</strong> (<code>deploy/*.service</code>)</p>
+</td><td colspan="1" rowspan="1"><p><code>lantern-api</code> runs uvicorn on <code>127.0.0.1:8000</code>; <code>lantern-ui</code> runs Streamlit on port 8501, open to the internet. Both are enabled at boot and restart automatically (<code>Restart=always</code>).</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Updates</strong> (<code>deploy/update.sh</code>)</p>
+</td><td colspan="1" rowspan="1"><p>After updating the code on the server: reinstalls the requirements, pulls the data again and restarts both services, then prints the deployed commit.</p>
+</td></tr>
+</table>
+<aside class="special"><p> The server never needs AWS keys: it reads the corpus from the same public DVC remote graders use, and the API exposes the outputs read-only. </p>
+</aside>
+
+
+      </google-codelab-step>
+    
       <google-codelab-step label="Summary and recommendations" duration="3">
-        <p><strong>Primary parsing path (Part 4).</strong> Keep the traditional pipeline (pdfplumber text, the Camelot hybrid extractor, LayoutParser routing) as the primary path. It has the lowest text error (WER 1.67% vs 6.32% for Docling), the highest numeric recall (99.48% vs 87.43%), and it matched XBRL on all 456 statement numbers. Use Docling as the fallback for side-by-side layouts, footnote separation, and as an independent second reading of the statements.</p>
+        <p><strong>Primary parsing path (Part 4).</strong> Keep the traditional pipeline (pdfplumber text, the Camelot hybrid extractor, LayoutParser routing) as the primary path. On 18 ground-truth pages it has the lowest text error (WER 1.91% vs 11.71% for Docling) and the highest numeric recall (99.5% vs 83.2%), it matched XBRL on all 456 statement numbers (Docling 450 of 452), and its OCR fallback reads scanned pages. Use Docling as the cross-check of the statements, where both paths agree cell for cell, and for form-like pages such as the cover.</p>
 <p><strong>Formats (Part 6).</strong> JSONL is the source of truth: it keeps every field, including the page, bbox and raw and normalized cells, that validation and citation need. Markdown feeds Case Study 2: it answered retrieval questions as accurately as JSONL at about a fifth of the tokens, and every block keeps a provenance comment that leads back to its JSONL record.</p>
 <p><strong>Build vs buy (Parts 7 and 10).</strong> AWS Textract matched the open-source pipeline number for number on every page compared, and at list price it costs about $4,540 a year for 5,000 filings, against $6 to $155 a year of compute for the open-source paths. Keep it as an off-by-default, cached fallback, triggered by a validation failure rather than sent every page.</p>
+<p><strong>The app.</strong> The deployed Streamlit app puts the corpus in an analyst&#39;s browser: any number can be searched and followed to its page, bounding box, JSONL record and Markdown line.</p>
 <p><strong>Reproducibility (Part 8).</strong> A fresh clone rebuilds everything with <code>dvc pull</code> and <code>dvc repro</code>, with no credentials, and every number in this Codelab traces back to a file in <code>reports/</code> or <code>data/</code>.</p>
 <h2 is-upgraded>Links</h2>
 <ul>
