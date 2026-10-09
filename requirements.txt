@@ -30,4 +30,3 @@ jiwer==4.0.0
 arelle-release==2.46.1
 psutil==7.2.2
 matplotlib==3.11.2
-(lantern-cs1) prcher
