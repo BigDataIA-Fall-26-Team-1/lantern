@@ -1162,5 +1162,4 @@ Duration: 0:03:00
 ### Links
 
 - Repository: [github.com/BigDataIA-Fall-26-Team-1/lantern](https://github.com/BigDataIA-Fall-26-Team-1/lantern)
-- Demo video: TODO
 - Deployed app: [http://52.15.107.141:8501/](http://52.15.107.141:8501/)
