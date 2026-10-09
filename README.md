@@ -4,7 +4,7 @@ DAMG 7245 Big Data and Intelligent Analytics · Fall 2026 · Case Study 1 (Part 
 
 | | |
 |---|---|
-| **Codelab** | [Project LANTERN Codelab](https://bigdataia-fall-26-team-1.github.io/lantern/lantern-case-study-1/) |
+| **Codelab** | [https://bigdataia-fall-26-team-1.github.io/lantern/lantern-case-study-1/](https://bigdataia-fall-26-team-1.github.io/lantern/lantern-case-study-1/) |
 | **Demo video** | TODO: link |
 | **Deployed app** | [http://52.15.107.141:8501](http://52.15.107.141:8501) |
 
