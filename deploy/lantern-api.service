@@ -1,0 +1,12 @@
+[Unit]
+Description=LANTERN read-only API
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/lantern
+ExecStart=/home/ubuntu/lantern/.venv/bin/uvicorn app.api.main:app --host 127.0.0.1 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

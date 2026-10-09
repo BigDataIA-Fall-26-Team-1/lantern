@@ -1,0 +1,13 @@
+[Unit]
+Description=LANTERN Streamlit UI
+After=lantern-api.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/lantern
+Environment=LANTERN_API=http://127.0.0.1:8000
+ExecStart=/home/ubuntu/lantern/.venv/bin/streamlit run app/ui/Home.py --server.port 8501 --server.address 0.0.0.0 --server.headless true --browser.gatherUsageStats false
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
