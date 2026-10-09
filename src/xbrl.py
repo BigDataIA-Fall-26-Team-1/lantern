@@ -27,6 +27,7 @@ Status of each number:
     scale_xN        off by exactly a factor of N (1e3, 1e6, ...)
     mismatch        different value
     xbrl_missing    concept found, but no fact for that period and dimensions
+    pdf_missing     a line the other path extracted and validated, missing from this path
     unmapped        no concept found for the label
 
 Arelle reports a period ending September 27 as midnight on September 28, so one day is
@@ -83,6 +84,7 @@ def load_facts(htm: Path) -> tuple[list[dict], dict, dict[str, str]]:
         raise SystemExit(f"[ERROR] Arelle could not load {htm}")
 
     facts, labels, periods = [], {}, {}
+    seen = set()
     label_rels = model.relationshipSet(XbrlConst.conceptLabel)
     for f in model.facts:
         if not getattr(f, "isNumeric", False) or f.isNil or f.context is None:
@@ -99,6 +101,10 @@ def load_facts(htm: Path) -> tuple[list[dict], dict, dict[str, str]]:
             value = float(f.xValue)
         except (TypeError, ValueError):
             continue
+        key = (concept, json.dumps(dims, sort_keys=True), start, end, f.unitID, value)
+        if key in seen:                       # the same fact tagged again elsewhere in the filing
+            continue
+        seen.add(key)
         facts.append({"concept": concept, "value": value, "unit": f.unitID,
                       "decimals": f.decimals, "instant": bool(c.isInstantPeriod),
                       "start": start.date().isoformat() if start else "",
@@ -322,6 +328,28 @@ def compare(cells, statement, stem, page, path_name, mapper, idx, fy_end, facts_
     return rows
 
 
+def add_pdf_missing(rows: list[dict], paths: list[str]) -> list[dict]:
+    """
+    Expected lines = every (filing, statement, concept, dimensions, period) that at least one
+    path extracted and found in XBRL. A path that lacks such a line gets a pdf_missing row,
+    so a lost row counts against that path's match rate.
+    """
+    found: dict[str, set] = defaultdict(set)
+    example: dict[tuple, dict] = {}
+    for r in rows:
+        if r["concept"] and r["status"] not in ("unmapped", "xbrl_missing"):
+            key = (r["stem"], r["statement"], r["concept"], r["dims"], r["period_end"])
+            found[r["path"]].add(key)
+            example.setdefault(key, r)
+    missing = []
+    for path_name in paths:
+        for key in sorted(set(example) - found[path_name]):
+            r = example[key]
+            missing.append({**r, "path": path_name, "value": "", "diff": "",
+                            "map_method": f"found by {r['path']} only", "status": "pdf_missing"})
+    return rows + missing
+
+
 def summarize(rows: list[dict]) -> dict:
     out: dict = defaultdict(dict)
     groups = defaultdict(list)
@@ -414,6 +442,7 @@ def main() -> None:
                                 facts_by_concept)
 
     write_csv(all_facts, out / "facts.csv")
+    all_rows = add_pdf_missing(all_rows, ["traditional", "docling"])
     write_csv(all_rows, out / "comparison.csv")
     summary = summarize(all_rows)
     (out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
