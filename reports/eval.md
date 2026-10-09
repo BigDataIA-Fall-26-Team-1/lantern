@@ -2,10 +2,10 @@
 
 ## 1. Ground truth
 
-Rules: `reports/ground_truth_conventions.md`. Data: `data/ground_truth/` (DVC);
-fixture copies in `tests/fixtures/gt/` (Git, for CI).
+Rules: `reports/ground_truth_conventions.md`. Filing pages: `data/ground_truth/` (DVC).
+Fixture pages: `tests/fixtures/gt/` (Git), read directly by the evaluation and by CI.
 
-**Pages: 8 per filing, plus 2 fixtures (18 pages).**
+**Pages: 10 per filing across the six strata (18 distinct pages).**
 
 | Stratum | FY2025 | FY2024 |
 |---|---|---|
@@ -17,13 +17,17 @@ fixture copies in `tests/fixtures/gt/` (Git, for CI).
 | Scanned | `scanned.pdf` fixture, page 1 (shared) | |
 
 The filings contain no multi-column or scanned page, so those strata use the Part 0
-fixtures, shared by both filings: `multicol.pdf` (a public JPMorgan filing page,
-documented in `tests/fixtures/README.md`) and `scanned.pdf` (FY2025 page 5 rasterized).
+fixtures, shared by both filings, as the brief allows: `multicol.pdf` (a public JPMorgan
+filing page, documented in `tests/fixtures/README.md`) and `scanned.pdf` (FY2025 page 5
+rasterized). The DVC stage `parse_fixtures` runs every extraction path (pdfplumber with
+OCR fallback, layout, Docling) on the fixtures, so these two strata are scored exactly
+like the filing pages. The statement fixture is FY2025 page 32, already scored, so it is
+excluded from the main metrics to avoid counting it twice.
 
 **How pages were made:** typed from the rendered page image, or "html-assisted"
 (copied from the original HTML filing, a different source from the PDF text layer the
 parsers read, then corrected against the page image). The method of every page is in
-`data/ground_truth/pages.csv`. No ground truth was made from parser output.
+`pages.csv`. No ground truth was made from parser output.
 
 **Tables:** the FY2025 income statement and balance sheet (111 cells) were keyed by two
 people independently. They agreed on 110 of 111 cells (F1 0.991). The one difference, a
@@ -41,25 +45,28 @@ against the page image (15,408,095).
 - **Cell precision / recall / F1:** each table becomes (row label, year, occurrence) ->
   value, so tables of different shapes are compared fairly.
 
-Sources: **pdfplumber** (Part 1 text), **layout** (Part 3 blocks in reading order),
-**Docling** (Part 4 per-page Markdown, markup removed).
+Sources: **pdfplumber** (Part 1 text, with the Tesseract OCR fallback), **layout**
+(Part 3 blocks in reading order), **Docling** (Part 4 per-page Markdown, markup removed).
+In `eval_pages.csv`, fixture pages are marked `source_set = fixture`.
 
-## 3. Results on the filings (16 pages)
+## 3. Results (18 pages)
 
 | Source | WER | CER | Numeric recall |
 |---|---|---|---|
-| pdfplumber | **1.67%** | 1.54% | 99.5% |
-| Docling | 6.32% | 4.27% | **87.4%** |
-| layout | 12.30% | 10.89% | 99.5% |
+| pdfplumber | **1.91%** | 1.76% | **99.5%** |
+| Docling | 11.71% | 9.72% | 83.2% |
+| layout | 12.37% | 10.88% | 96.7% |
 
 **WER per stratum**
 
 | Stratum (pages) | pdfplumber | Docling | layout |
 |---|---|---|---|
-| Statements (6) | 1.67% | 9.87% | 4.74% |
-| Notes (4) | 2.20% | 2.98% | 6.78% |
-| Prose (4) | 0.11% | 4.05% | 5.37% |
-| Cover (2) | 3.74% | 6.90% | **59.87%** |
+| Statements (6) | **1.67%** | 9.87% | 4.74% |
+| Notes (4) | **2.20%** | 2.98% | 6.78% |
+| Prose (4) | **0.11%** | 4.05% | 5.37% |
+| Cover (2) | **3.74%** | 6.90% | 59.87% |
+| Multi-column (1, fixture) | 7.62% | 9.60% | **3.15%** |
+| Scanned (1, fixture) | **0.00%** | 100.00% | 22.79% |
 
 **Tables (111 cells, double-keyed)**
 
@@ -68,28 +75,22 @@ Sources: **pdfplumber** (Part 1 text), **layout** (Part 3 blocks in reading orde
 | Traditional (Part 2) | 1.0 | 1.0 | 1.0 |
 | Docling | 1.0 | 1.0 | 1.0 |
 
-**Fixtures (pdfplumber with OCR fallback, as run in CI)**
-
-| Fixture | WER |
-|---|---|
-| Statement (FY2025 p32) | 2.27% |
-| Multi-column | 7.62% |
-| Scanned (OCR) | 0.00% |
-
 ## 4. Findings
 
-1. **pdfplumber reads text best on every stratum.** It reads the text layer directly,
-   with no model between the page and the words.
-2. **Docling misses about 13% of the numbers on a page** (numeric recall 87.4%), most on
-   statements (9.9% WER). Part 11 found one cause: on the cash flow statement, Docling
-   merged the first data row into the column header, so its values never became cells.
-   Its tables, where it finds them, are exact (F1 1.0).
-3. **Layout's reading order is the weak point on form-like pages:** 60% WER on the cover,
-   where the Part 3 audit found page-sized low-confidence Table and Figure boxes. On
-   statements, notes and prose it stays at 5 to 7%, every number present (99.5%).
-4. **Multi-column is pdfplumber's hardest stratum** (7.6%): it reads straight across the
-   two side-by-side tables, interleaving their rows, while the ground truth reads the
-   left table and then the right one.
+1. **pdfplumber reads text best on five of six strata.** It reads the text layer
+   directly, and its OCR fallback reads the scanned page perfectly.
+2. **Multi-column is where layout earns its place: 3.2% vs pdfplumber's 7.6%.**
+   pdfplumber reads straight across the two side-by-side tables and interleaves their
+   rows; layout's column-aware reading order reads the left table, then the right.
+3. **Docling cannot read a scanned page in our setup (100% WER).** It runs without OCR,
+   so an image-only page yields no text. This is exactly the case the traditional path's
+   OCR fallback (Part 1) exists for. On filing pages Docling sits between the other two,
+   and it misses numbers (numeric recall 83%): Part 11 found one cause, a cash flow row
+   merged into the table header. Its tables, where it finds them, are exact (F1 1.0).
+4. **Layout breaks on form-like pages:** 60% WER on the cover, where the Part 3 audit
+   found page-sized low-confidence Table and Figure boxes, and 23% on the scanned page,
+   where each detected block is OCR'd separately, which is less accurate than OCR on the
+   whole page.
 5. **OCR scored 0.0 WER on the scanned fixture (544 words).** The image is a clean
    digital render, not a physical scan, so this is a best case for Tesseract, not a
    typical one.
@@ -137,77 +138,58 @@ fallback's minimum-length filter discarded them at 0 pt. (A distance of 0 still 
 words that straddle a box edge, so the full effect of snapping is larger: when it was
 introduced, fallback blocks fell by 30%; see `reports/layout_audit.md`.)
 
-## 8. Limitations
+## 8. Challenges
+
+| Problem | Fix |
+|---|---|
+| Docling's per-page files shifted by one page (90% WER) | Reported; fixed in `docling_parse.py` and its stage rerun |
+| Four pages listed twice in `pages.csv` (20 instead of 16) | File rewritten; averages had been double-weighted |
+| A page file named `p036` instead of `p0036` | Renamed; it had been silently skipped |
+| Fixture strata scored only in CI, pdfplumber only | New `parse_fixtures` stage runs all three paths on the fixtures |
+| Running `python src/docling_parse.py` failed with a circular import | The script's name shadows the `docling_parse` package; run as a module (`python -m src.docling_parse`), as its own stage does |
+| Docling's script needs a manifest | A small `tests/fixtures/manifest_fixtures.csv` (named so other scripts do not pick it up) |
+
+## 9. Limitations
 
 - Ground truth covers 16 filing pages and two fixtures; only two tables are double-keyed.
-- The multi-column and scanned strata use fixtures, not pages of these filings.
+- The multi-column and scanned strata have one page each, from fixtures.
 - The scanned fixture is a clean render; a real scan would score worse.
-- Fixture metrics cover pdfplumber only (CI does not run layout or Docling).
+- Docling runs without OCR here; with OCR enabled its scanned score would change.
 
-## 9. dvc metrics diff
+## 10. dvc metrics diff
 
-`dvc metrics diff main --md`, run on branch `p9-wrapup`. On `main`, `reports/metrics.json`
-was still the empty skeleton placeholder, so every metric appears as new ("-" under
-`main`). Later changes to any stage now show up here as numeric changes.
-| Path                 | Metric                                     | main   | workspace   | Change   |
-|----------------------|--------------------------------------------|--------|-------------|----------|
-| reports/metrics.json | keyer_agreement_f1                         | -      | 0.9912      | -        |
-| reports/metrics.json | tables.docling.cells_gt                    | -      | 111         | -        |
-| reports/metrics.json | tables.docling.f1                          | -      | 1.0         | -        |
-| reports/metrics.json | tables.docling.precision                   | -      | 1.0         | -        |
-| reports/metrics.json | tables.docling.recall                      | -      | 1.0         | -        |
-| reports/metrics.json | tables.docling.tables                      | -      | 2           | -        |
-| reports/metrics.json | tables.traditional.cells_gt                | -      | 111         | -        |
-| reports/metrics.json | tables.traditional.f1                      | -      | 1.0         | -        |
-| reports/metrics.json | tables.traditional.precision               | -      | 1.0         | -        |
-| reports/metrics.json | tables.traditional.recall                  | -      | 1.0         | -        |
-| reports/metrics.json | tables.traditional.tables                  | -      | 2           | -        |
-| reports/metrics.json | text.docling.cer                           | -      | 0.0427      | -        |
-| reports/metrics.json | text.docling.numeric_recall                | -      | 0.8743      | -        |
-| reports/metrics.json | text.docling.pages                         | -      | 16          | -        |
-| reports/metrics.json | text.docling.wer                           | -      | 0.0632      | -        |
-| reports/metrics.json | text.layout.cer                            | -      | 0.1089      | -        |
-| reports/metrics.json | text.layout.numeric_recall                 | -      | 0.9948      | -        |
-| reports/metrics.json | text.layout.pages                          | -      | 16          | -        |
-| reports/metrics.json | text.layout.wer                            | -      | 0.123       | -        |
-| reports/metrics.json | text.pdfplumber.cer                        | -      | 0.0154      | -        |
-| reports/metrics.json | text.pdfplumber.numeric_recall             | -      | 0.9948      | -        |
-| reports/metrics.json | text.pdfplumber.pages                      | -      | 16          | -        |
-| reports/metrics.json | text.pdfplumber.wer                        | -      | 0.0167      | -        |
-| reports/metrics.json | text_by_stratum.cover.docling.cer          | -      | 0.0645      | -        |
-| reports/metrics.json | text_by_stratum.cover.docling.pages        | -      | 2           | -        |
-| reports/metrics.json | text_by_stratum.cover.docling.wer          | -      | 0.069       | -        |
-| reports/metrics.json | text_by_stratum.cover.layout.cer           | -      | 0.5371      | -        |
-| reports/metrics.json | text_by_stratum.cover.layout.pages         | -      | 2           | -        |
-| reports/metrics.json | text_by_stratum.cover.layout.wer           | -      | 0.5987      | -        |
-| reports/metrics.json | text_by_stratum.cover.pdfplumber.cer       | -      | 0.0416      | -        |
-| reports/metrics.json | text_by_stratum.cover.pdfplumber.pages     | -      | 2           | -        |
-| reports/metrics.json | text_by_stratum.cover.pdfplumber.wer       | -      | 0.0374      | -        |
-| reports/metrics.json | text_by_stratum.notes.docling.cer          | -      | 0.0171      | -        |
-| reports/metrics.json | text_by_stratum.notes.docling.pages        | -      | 4           | -        |
-| reports/metrics.json | text_by_stratum.notes.docling.wer          | -      | 0.0298      | -        |
-| reports/metrics.json | text_by_stratum.notes.layout.cer           | -      | 0.0628      | -        |
-| reports/metrics.json | text_by_stratum.notes.layout.pages         | -      | 4           | -        |
-| reports/metrics.json | text_by_stratum.notes.layout.wer           | -      | 0.0678      | -        |
-| reports/metrics.json | text_by_stratum.notes.pdfplumber.cer       | -      | 0.0238      | -        |
-| reports/metrics.json | text_by_stratum.notes.pdfplumber.pages     | -      | 4           | -        |
-| reports/metrics.json | text_by_stratum.notes.pdfplumber.wer       | -      | 0.022       | -        |
-| reports/metrics.json | text_by_stratum.prose.docling.cer          | -      | 0.0124      | -        |
-| reports/metrics.json | text_by_stratum.prose.docling.pages        | -      | 4           | -        |
-| reports/metrics.json | text_by_stratum.prose.docling.wer          | -      | 0.0405      | -        |
-| reports/metrics.json | text_by_stratum.prose.layout.cer           | -      | 0.0493      | -        |
-| reports/metrics.json | text_by_stratum.prose.layout.pages         | -      | 4           | -        |
-| reports/metrics.json | text_by_stratum.prose.layout.wer           | -      | 0.0537      | -        |
-| reports/metrics.json | text_by_stratum.prose.pdfplumber.cer       | -      | 0.0006      | -        |
-| reports/metrics.json | text_by_stratum.prose.pdfplumber.pages     | -      | 4           | -        |
-| reports/metrics.json | text_by_stratum.prose.pdfplumber.wer       | -      | 0.0011      | -        |
-| reports/metrics.json | text_by_stratum.statement.docling.cer      | -      | 0.0727      | -        |
-| reports/metrics.json | text_by_stratum.statement.docling.pages    | -      | 6           | -        |
-| reports/metrics.json | text_by_stratum.statement.docling.wer      | -      | 0.0987      | -        |
-| reports/metrics.json | text_by_stratum.statement.layout.cer       | -      | 0.0366      | -        |
-| reports/metrics.json | text_by_stratum.statement.layout.pages     | -      | 6           | -        |
-| reports/metrics.json | text_by_stratum.statement.layout.wer       | -      | 0.0474      | -        |
-| reports/metrics.json | text_by_stratum.statement.pdfplumber.cer   | -      | 0.0109      | -        |
-| reports/metrics.json | text_by_stratum.statement.pdfplumber.pages | -      | 6           | -        |
-| reports/metrics.json | text_by_stratum.statement.pdfplumber.wer   | -      | 0.0167      | -        |
+`dvc metrics diff main --md`, run on branch `p9-fixture-strata`: the change from scoring
+16 filing pages in 4 strata to 18 pages in all 6 strata.
+| Path                 | Metric                                       | main   | workspace   | Change   |
+|----------------------|----------------------------------------------|--------|-------------|----------|
+| reports/metrics.json | text.docling.cer                             | 0.0427 | 0.0972      | 0.0545   |
+| reports/metrics.json | text.docling.numeric_recall                  | 0.8743 | 0.8318      | -0.0425  |
+| reports/metrics.json | text.docling.pages                           | 16     | 18          | 2        |
+| reports/metrics.json | text.docling.wer                             | 0.0632 | 0.1171      | 0.0539   |
+| reports/metrics.json | text.layout.cer                              | 0.1089 | 0.1088      | -0.0001  |
+| reports/metrics.json | text.layout.numeric_recall                   | 0.9948 | 0.9667      | -0.0281  |
+| reports/metrics.json | text.layout.pages                            | 16     | 18          | 2        |
+| reports/metrics.json | text.layout.wer                              | 0.123  | 0.1237      | 0.0007   |
+| reports/metrics.json | text.pdfplumber.cer                          | 0.0154 | 0.0176      | 0.0022   |
+| reports/metrics.json | text.pdfplumber.numeric_recall               | 0.9948 | 0.9954      | 0.0006   |
+| reports/metrics.json | text.pdfplumber.pages                        | 16     | 18          | 2        |
+| reports/metrics.json | text.pdfplumber.wer                          | 0.0167 | 0.0191      | 0.0024   |
+| reports/metrics.json | text_by_stratum.multicolumn.docling.cer      | -      | 0.0662      | -        |
+| reports/metrics.json | text_by_stratum.multicolumn.docling.pages    | -      | 1           | -        |
+| reports/metrics.json | text_by_stratum.multicolumn.docling.wer      | -      | 0.096       | -        |
+| reports/metrics.json | text_by_stratum.multicolumn.layout.cer       | -      | 0.0353      | -        |
+| reports/metrics.json | text_by_stratum.multicolumn.layout.pages     | -      | 1           | -        |
+| reports/metrics.json | text_by_stratum.multicolumn.layout.wer       | -      | 0.0315      | -        |
+| reports/metrics.json | text_by_stratum.multicolumn.pdfplumber.cer   | -      | 0.0704      | -        |
+| reports/metrics.json | text_by_stratum.multicolumn.pdfplumber.pages | -      | 1           | -        |
+| reports/metrics.json | text_by_stratum.multicolumn.pdfplumber.wer   | -      | 0.0762      | -        |
+| reports/metrics.json | text_by_stratum.scanned.docling.cer          | -      | 1.0         | -        |
+| reports/metrics.json | text_by_stratum.scanned.docling.pages        | -      | 1           | -        |
+| reports/metrics.json | text_by_stratum.scanned.docling.wer          | -      | 1.0         | -        |
+| reports/metrics.json | text_by_stratum.scanned.layout.cer           | -      | 0.1817      | -        |
+| reports/metrics.json | text_by_stratum.scanned.layout.pages         | -      | 1           | -        |
+| reports/metrics.json | text_by_stratum.scanned.layout.wer           | -      | 0.2279      | -        |
+| reports/metrics.json | text_by_stratum.scanned.pdfplumber.cer       | -      | 0.0         | -        |
+| reports/metrics.json | text_by_stratum.scanned.pdfplumber.pages     | -      | 1           | -        |
+| reports/metrics.json | text_by_stratum.scanned.pdfplumber.wer       | -      | 0.0         | -        |
 
