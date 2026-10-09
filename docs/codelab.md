@@ -7,30 +7,72 @@ status: Draft
 authors: BigDataIA Fall 2026 Team 1
 feedback link: https://github.com/BigDataIA-Fall-26-Team-1/lantern/issues
 
-# Project LANTERN: Parsing SEC Filings into a Traceable Corpus
+# Project lantern: Parsing SEC Filings into a Traceable Corpus
 
 ## Overview
-Duration: 0:03:00
+Duration: 0:04:00
 
-FinTrust Analytics wants every number in an analyst memo to point back to a page and a bounding box in the source filing. Project LANTERN builds that corpus: it downloads two Apple (AAPL) 10-K filings (FY2024 and FY2025) from EDGAR, renders them to PDF, extracts text, tables and layout, attaches provenance, checks the numbers against the filing's own XBRL, and versions every artifact with DVC.
+**Project LANTERN turns SEC 10-K filings into a corpus where every sentence and every number can be traced back to a page and a bounding box in the source, and every financial figure is checked against the filing's own XBRL.**
 
-### What you will build
+FinTrust Analytics' analysts download filings by hand and cannot say where a number in a memo came from. LANTERN automates the whole path: it downloads two Apple (AAPL) 10-K filings (FY2024 and FY2025) from SEC EDGAR, renders them to PDF, extracts text, tables and layout with three independent methods, validates the numbers against XBRL, evaluates quality against a hand-typed answer key, and versions every artifact with DVC, so the corpus rebuilds from one command.
 
-- A DVC pipeline with the stages `download`, `render`, `parse_pdfplumber`, `tables`, `layout`, `parse_docling`, `export`, `xbrl`, `evaluate`
-- A provenance-tagged JSONL corpus plus section Markdown
-- Evaluation metrics, benchmarks, an XBRL validation report and a build-vs-buy recommendation
+### Results at a glance
 
-### Architecture
+| | Result | Step |
+|---|---|---|
+| **Corpus** | 2 filings, 121 pages, 1,705 validated records, each with a page and a bounding box | Parts 0, 5 |
+| **Text accuracy** | 1.67% word error rate (pdfplumber) on 16 hand-typed pages | Part 9 |
+| **Table accuracy** | cell F1 of 1.0 on 111 cells keyed by two people independently (agreement 0.991) | Part 9 |
+| **Validated against XBRL** | 456 of 456 statement numbers match the filing's own XBRL (100%) | Part 11 |
+| **Build vs buy** | open source about $6 a year in compute vs about $4,540 a year for AWS Textract, at 5,000 filings | Parts 7, 10 |
+| **Reproducible** | a fresh clone rebuilds everything with `dvc pull`; `dvc repro` skips all 9 stages; 65 tests pass | Part 8 |
 
-![LANTERN architecture](img/architecture.png)
+### What Project Lantern does
+
+| Component | How it works |
+|---|---|
+| **Ingest** (Part 0) | Downloads the two 10-Ks pinned in `params.yaml` with `sec-edgar-downloader`, unpacks the iXBRL files, and renders each filing to PDF with Playwright (60 and 61 pages). |
+| **Text** (Part 1) | Reads every page's text and word boxes with pdfplumber. A three-signal trigger sends image-only pages to Tesseract OCR: none of the 121 filing pages needed it, and the scanned test fixture came back at 95.4–95.7 confidence. |
+| **Tables** (Part 2) | A hybrid extractor picks the best Camelot method per page (stream for the income statement, network for the balance sheet) and normalizes every number: negatives in parentheses, the "in millions" scale, unscaled per-share rows. |
+| **Layout** (Part 3) | LayoutParser finds the blocks on each page and routes each one to the right extractor; a fallback keeps every word the model misses. |
+| **Docling** (Part 4) | A second, independent parsing path, used to compare and as a fallback for layouts the traditional path handles badly. |
+| **Corpus** (Parts 5–6) | 1,705 records, each validated by a pydantic schema and carrying its page and bounding box. JSONL is the source of truth; section Markdown, with a provenance comment before every block, feeds retrieval. |
+| **Build vs buy** (Part 7) | AWS Textract runs as an optional, cached fallback, off by default, so the pipeline needs no cloud credentials. |
+| **Pipeline** (Part 8) | Nine DVC stages with every output hash in `dvc.lock`, data on a public-read S3 remote, and a CI smoke test on every pull request. |
+| **Evaluation** (Part 9) | Scores every path against 18 hand-typed pages and two double-keyed statements, with regression tests that fail when a parser breaks. |
+| **Benchmarks** (Part 10) | Times every stage per page and turns that into a yearly cost, open source vs managed. |
+| **XBRL validation** (Part 11) | Loads the filings' own XBRL with Arelle, maps each table row to its concept, and checks every number. |
 
 ### Team
 
-Big Data Fall 2026 Team 1
- 1. Pradyumna Reddy Cherla
- 2. Pranav Avinash Waghmare
- 3. Preksha Praveen
+**Big Data and Intelligent Analytics (DAMG 7245), Fall 2026 · Team 1**
 
+| Team member | Parts |
+|---|---|
+| **Pradyumna Reddy Cherla** | Part 2 (tables), Part 3 (layout), Part 9 (evaluation), Part 11 (XBRL validation) |
+| **Pranav Avinash Waghmare** | Part 0 (download and render), Part 4 (Docling), Part 8 (pipeline), Part 10 (benchmarks) |
+| **Preksha Praveen** | Part 1 (text and OCR), Part 5 (schema and provenance), Part 6 (formats), Part 7 (build vs buy), DVC remote on S3 |
+
+### Links
+
+- **Repository:** [github.com/BigDataIA-Fall-26-Team-1/lantern](https://github.com/BigDataIA-Fall-26-Team-1/lantern)
+- **Deployed app:** [http://52.15.107.141:8501/](http://52.15.107.141:8501/)
+- **Demo video:** TODO
+
+## Architecture
+Duration: 0:03:00
+
+Every stage reads one folder and writes the next, and every folder is versioned with DVC.
+
+![Project Lantern Architecture](img/architecture.png)
+
+| Layer | Stages | What it produces |
+|---|---|---|
+| Ingest | `download`, `render` | the filings' iXBRL HTML (`data/raw`) and rendered PDFs (`data/rendered`) |
+| Parse | `parse_pdfplumber`, `tables`, `layout`, `parse_docling` | text and word boxes, tables, layout blocks, and Docling's alternative reading |
+| Managed fallback | (optional, off by default) | cached AWS Textract responses (`data/managed`) |
+| Represent | `export` | validated JSONL, section Markdown and TXT (`data/export`) |
+| Validate and evaluate | `xbrl`, `evaluate` | XBRL match rates (`data/xbrl`) and quality metrics (`reports/metrics.json`) |
 
 ## Setup and reproduction
 Duration: 0:10:00

@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1.0, user-scalable=yes">
   <meta name="theme-color" content="#4F7DC9">
   <meta charset="UTF-8">
-  <title>Project LANTERN: Parsing SEC Filings into a Traceable Corpus</title>
+  <title>Project lantern: Parsing SEC Filings into a Traceable Corpus</title>
   <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Source+Code+Pro:400|Roboto:400,300,400italic,500,700|Roboto+Mono">
   <link rel="stylesheet" href="//fonts.googleapis.com/icon?family=Material+Icons">
   <link rel="stylesheet" href="https://storage.googleapis.com/claat-public/codelab-elements.css">
@@ -24,27 +24,137 @@
   <google-codelab codelab-gaid=""
                   codelab-ga4id=""
                   id="lantern-case-study-1"
-                  title="Project LANTERN: Parsing SEC Filings into a Traceable Corpus"
+                  title="Project lantern: Parsing SEC Filings into a Traceable Corpus"
                   environment="web"
                   feedback-link="https://github.com/BigDataIA-Fall-26-Team-1/lantern/issues">
     
-      <google-codelab-step label="Overview" duration="3">
-        <p>FinTrust Analytics wants every number in an analyst memo to point back to a page and a bounding box in the source filing. Project LANTERN builds that corpus: it downloads two Apple (AAPL) 10-K filings (FY2024 and FY2025) from EDGAR, renders them to PDF, extracts text, tables and layout, attaches provenance, checks the numbers against the filing&#39;s own XBRL, and versions every artifact with DVC.</p>
-<h2 is-upgraded>What you will build</h2>
-<ul>
-<li>A DVC pipeline with the stages <code>download</code>, <code>render</code>, <code>parse_pdfplumber</code>, <code>tables</code>, <code>layout</code>, <code>parse_docling</code>, <code>export</code>, <code>xbrl</code>, <code>evaluate</code></li>
-<li>A provenance-tagged JSONL corpus plus section Markdown</li>
-<li>Evaluation metrics, benchmarks, an XBRL validation report and a build-vs-buy recommendation</li>
-</ul>
-<h2 is-upgraded>Architecture</h2>
-<p class="image-container"><img alt="LANTERN architecture" src="img/e27b98612b909f64.png"></p>
+      <google-codelab-step label="Overview" duration="4">
+        <p><strong>Project LANTERN turns SEC 10-K filings into a corpus where every sentence and every number can be traced back to a page and a bounding box in the source, and every financial figure is checked against the filing&#39;s own XBRL.</strong></p>
+<p>FinTrust Analytics&#39; analysts download filings by hand and cannot say where a number in a memo came from. LANTERN automates the whole path: it downloads two Apple (AAPL) 10-K filings (FY2024 and FY2025) from SEC EDGAR, renders them to PDF, extracts text, tables and layout with three independent methods, validates the numbers against XBRL, evaluates quality against a hand-typed answer key, and versions every artifact with DVC, so the corpus rebuilds from one command.</p>
+<h2 is-upgraded>Results at a glance</h2>
+<table>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>Result</p>
+</td><td colspan="1" rowspan="1"><p>Step</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Corpus</strong></p>
+</td><td colspan="1" rowspan="1"><p>2 filings, 121 pages, 1,705 validated records, each with a page and a bounding box</p>
+</td><td colspan="1" rowspan="1"><p>Parts 0, 5</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Text accuracy</strong></p>
+</td><td colspan="1" rowspan="1"><p>1.67% word error rate (pdfplumber) on 16 hand-typed pages</p>
+</td><td colspan="1" rowspan="1"><p>Part 9</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Table accuracy</strong></p>
+</td><td colspan="1" rowspan="1"><p>cell F1 of 1.0 on 111 cells keyed by two people independently (agreement 0.991)</p>
+</td><td colspan="1" rowspan="1"><p>Part 9</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Validated against XBRL</strong></p>
+</td><td colspan="1" rowspan="1"><p>456 of 456 statement numbers match the filing&#39;s own XBRL (100%)</p>
+</td><td colspan="1" rowspan="1"><p>Part 11</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Build vs buy</strong></p>
+</td><td colspan="1" rowspan="1"><p>open source about $6 a year in compute vs about $4,540 a year for AWS Textract, at 5,000 filings</p>
+</td><td colspan="1" rowspan="1"><p>Parts 7, 10</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Reproducible</strong></p>
+</td><td colspan="1" rowspan="1"><p>a fresh clone rebuilds everything with <code>dvc pull</code>; <code>dvc repro</code> skips all 9 stages; 65 tests pass</p>
+</td><td colspan="1" rowspan="1"><p>Part 8</p>
+</td></tr>
+</table>
+<h2 is-upgraded>What Project Lantern does</h2>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Component</p>
+</td><td colspan="1" rowspan="1"><p>How it works</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Ingest</strong> (Part 0)</p>
+</td><td colspan="1" rowspan="1"><p>Downloads the two 10-Ks pinned in <code>params.yaml</code> with <code>sec-edgar-downloader</code>, unpacks the iXBRL files, and renders each filing to PDF with Playwright (60 and 61 pages).</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Text</strong> (Part 1)</p>
+</td><td colspan="1" rowspan="1"><p>Reads every page&#39;s text and word boxes with pdfplumber. A three-signal trigger sends image-only pages to Tesseract OCR: none of the 121 filing pages needed it, and the scanned test fixture came back at 95.4–95.7 confidence.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Tables</strong> (Part 2)</p>
+</td><td colspan="1" rowspan="1"><p>A hybrid extractor picks the best Camelot method per page (stream for the income statement, network for the balance sheet) and normalizes every number: negatives in parentheses, the &#34;in millions&#34; scale, unscaled per-share rows.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Layout</strong> (Part 3)</p>
+</td><td colspan="1" rowspan="1"><p>LayoutParser finds the blocks on each page and routes each one to the right extractor; a fallback keeps every word the model misses.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Docling</strong> (Part 4)</p>
+</td><td colspan="1" rowspan="1"><p>A second, independent parsing path, used to compare and as a fallback for layouts the traditional path handles badly.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Corpus</strong> (Parts 5–6)</p>
+</td><td colspan="1" rowspan="1"><p>1,705 records, each validated by a pydantic schema and carrying its page and bounding box. JSONL is the source of truth; section Markdown, with a provenance comment before every block, feeds retrieval.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Build vs buy</strong> (Part 7)</p>
+</td><td colspan="1" rowspan="1"><p>AWS Textract runs as an optional, cached fallback, off by default, so the pipeline needs no cloud credentials.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Pipeline</strong> (Part 8)</p>
+</td><td colspan="1" rowspan="1"><p>Nine DVC stages with every output hash in <code>dvc.lock</code>, data on a public-read S3 remote, and a CI smoke test on every pull request.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Evaluation</strong> (Part 9)</p>
+</td><td colspan="1" rowspan="1"><p>Scores every path against 18 hand-typed pages and two double-keyed statements, with regression tests that fail when a parser breaks.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Benchmarks</strong> (Part 10)</p>
+</td><td colspan="1" rowspan="1"><p>Times every stage per page and turns that into a yearly cost, open source vs managed.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>XBRL validation</strong> (Part 11)</p>
+</td><td colspan="1" rowspan="1"><p>Loads the filings&#39; own XBRL with Arelle, maps each table row to its concept, and checks every number.</p>
+</td></tr>
+</table>
 <h2 is-upgraded>Team</h2>
-<p>Big Data Fall 2026 Team 1</p>
-<ol type="1">
-<li>Pradyumna Reddy Cherla</li>
-<li>Pranav Avinash Waghmare</li>
-<li>Preksha Praveen</li>
-</ol>
+<p><strong>Big Data and Intelligent Analytics (DAMG 7245), Fall 2026 · Team 1</strong></p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Team member</p>
+</td><td colspan="1" rowspan="1"><p>Parts</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Pradyumna Reddy Cherla</strong></p>
+</td><td colspan="1" rowspan="1"><p>Part 2 (tables), Part 3 (layout), Part 9 (evaluation), Part 11 (XBRL validation)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Pranav Avinash Waghmare</strong></p>
+</td><td colspan="1" rowspan="1"><p>Part 0 (download and render), Part 4 (Docling), Part 8 (pipeline), Part 10 (benchmarks)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Preksha Praveen</strong></p>
+</td><td colspan="1" rowspan="1"><p>Part 1 (text and OCR), Part 5 (schema and provenance), Part 6 (formats), Part 7 (build vs buy), DVC remote on S3</p>
+</td></tr>
+</table>
+<h2 is-upgraded>Links</h2>
+<ul>
+<li><strong>Repository: </strong><a href="https://github.com/BigDataIA-Fall-26-Team-1/lantern" target="_blank">github.com/BigDataIA-Fall-26-Team-1/lantern</a></li>
+<li><strong>Deployed app: </strong><a href="http://52.15.107.141:8501/" target="_blank">http://52.15.107.141:8501/</a></li>
+<li><strong>Demo video:</strong> TODO</li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Architecture" duration="3">
+        <p>Every stage reads one folder and writes the next, and every folder is versioned with DVC.</p>
+<p class="image-container"><img alt="Project Lantern Architecture" src="img/e27b98612b909f64.png"></p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Layer</p>
+</td><td colspan="1" rowspan="1"><p>Stages</p>
+</td><td colspan="1" rowspan="1"><p>What it produces</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Ingest</p>
+</td><td colspan="1" rowspan="1"><p><code>download</code>, <code>render</code></p>
+</td><td colspan="1" rowspan="1"><p>the filings&#39; iXBRL HTML (<code>data/raw</code>) and rendered PDFs (<code>data/rendered</code>)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Parse</p>
+</td><td colspan="1" rowspan="1"><p><code>parse_pdfplumber</code>, <code>tables</code>, <code>layout</code>, <code>parse_docling</code></p>
+</td><td colspan="1" rowspan="1"><p>text and word boxes, tables, layout blocks, and Docling&#39;s alternative reading</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Managed fallback</p>
+</td><td colspan="1" rowspan="1"><p>(optional, off by default)</p>
+</td><td colspan="1" rowspan="1"><p>cached AWS Textract responses (<code>data/managed</code>)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Represent</p>
+</td><td colspan="1" rowspan="1"><p><code>export</code></p>
+</td><td colspan="1" rowspan="1"><p>validated JSONL, section Markdown and TXT (<code>data/export</code>)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Validate and evaluate</p>
+</td><td colspan="1" rowspan="1"><p><code>xbrl</code>, <code>evaluate</code></p>
+</td><td colspan="1" rowspan="1"><p>XBRL match rates (<code>data/xbrl</code>) and quality metrics (<code>reports/metrics.json</code>)</p>
+</td></tr>
+</table>
 
 
       </google-codelab-step>
