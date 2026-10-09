@@ -22,8 +22,6 @@ FinTrust Analytics wants every number in an analyst memo to point back to a page
 
 ### Architecture
 
-TODO: add the architecture diagram image.
-
 ![LANTERN architecture](img/architecture.png)
 
 ### Team
@@ -36,6 +34,8 @@ Big Data Fall 2026 Team 1
 
 ## Setup and reproduction
 Duration: 0:10:00
+
+This rebuilds the whole corpus from our DVC remote. No AWS or other cloud credentials are needed: the data is publicly readable, and the managed service (Part 7) is off by default.
 
 ### Prerequisites
 
@@ -60,7 +60,7 @@ sudo apt-get install -y tesseract-ocr poppler-utils
 These are the exact commands from the brief's reproducibility contract:
 
 ```bash
-git clone <repo-url> lantern && cd lantern
+git clone https://github.com/BigDataIA-Fall-26-Team-1/lantern.git lantern && cd lantern
 git checkout submission
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
@@ -70,23 +70,84 @@ dvc metrics show
 pytest -q
 ```
 
-`dvc pull` reads from the S3 remote documented in the README (read-only, no credentials needed). After a pull, `dvc repro` skips every stage, because every output already matches `dvc.lock`.
+### What you should see
 
-TODO: screenshot of `dvc repro` showing every stage skipped.
+- `dvc pull` downloads every data folder from the read-only S3 remote: `data/raw`, `data/rendered`, `data/parsed`, `data/tables`, `data/layout`, `data/figures`, `data/docling`, `data/export`, `data/managed`, `data/ground_truth`, `data/xbrl` and `data/bench`.
+- `dvc repro` reports every stage as unchanged and skips it, because every output already matches `dvc.lock`. That is what reproducibility looks like.
+- `dvc metrics show` prints the evaluation metrics from `reports/metrics.json` (Part 9).
+- `pytest -q` passes every test.
+
+<aside class="positive">
+The managed service stays off: <code>managed.enabled: false</code> in <code>params.yaml</code>. The pipeline only reads its cached responses, so no cloud account is needed.
+</aside>
 
 ![dvc repro skipping stages](img/setup-dvc-repro.png)
 
 ## Part 0: Download and render
 Duration: 0:05:00
 
-TODO (owner): fill in. Checklist from the brief:
+Two stages turn EDGAR filings into the PDFs every later stage reads.
 
-- `src/download.py`: filings from `params.yaml` with `download_details=True`, `full-submission.txt` unpacked into `unpacked/`
-- `src/render.py`: `data/rendered/{TICKER}_{FORM}_{PERIOD}.pdf` and `data/rendered/manifest.csv`
-- The three fixtures in `tests/fixtures/` (scanned, statement, multi-column from another filing, documented in `tests/fixtures/README.md`)
-- Commands: `dvc repro download`, `dvc repro render`
-- Results: page count and MB per filing, `data/raw` size under 100 MB
-- Screenshot: one rendered page, `manifest.csv`
+### Download
+
+`src/download.py` uses `sec-edgar-downloader` with `download_details=True`. Which filings to fetch is pinned in `params.yaml`, so the corpus never depends on "the latest" filings:
+
+```yaml
+download:
+  ticker: AAPL
+  forms: ["10-K"]
+  after: "2024-01-01"
+  before: "2026-01-01"
+```
+
+Every request declares the team's User-Agent (name and Northeastern email, also from `params.yaml`). Each filing's `full-submission.txt` is unpacked into an `unpacked/` folder with the original file names: the iXBRL `.htm`, the `.xsd` and the linkbases, which Part 11 needs to load the filing in Arelle.
+
+### Render
+
+EDGAR's official documents are Inline XBRL HTML, not PDFs, so `src/render.py` renders each filing's HTML with Playwright (headless Chromium, Letter size) to `data/rendered/{TICKER}_{FORM}_{PERIOD}.pdf`. `PERIOD` comes from the `CONFORMED PERIOD OF REPORT` header line, and the CIK from `CENTRAL INDEX KEY`. The stage also writes `data/rendered/manifest.csv` (stem, accession, cik, ticker, form, period, source file), which lets every later stage translate a file name into an accession number.
+
+<aside class="negative">
+Fonts and the browser engine move page breaks, and page breaks decide every page number downstream. The PDFs were therefore rendered once, on one machine, and everyone else gets them with <code>dvc pull</code>. Re-rendering elsewhere would shift pages.
+</aside>
+
+### Run it
+
+```bash
+dvc repro download render
+```
+
+After a `dvc pull`, both stages are skipped. To inspect the results:
+
+```bash
+du -sh data/raw
+cat data/rendered/manifest.csv
+pdfinfo data/rendered/AAPL_10K_20250927.pdf | grep Pages
+```
+
+### Results
+
+| Filing | Accession | Rendered PDF | Pages |
+|---|---|---|---|
+| FY2024 10-K | 0000320193-24-000123 | `AAPL_10K_20240928.pdf` | 60 |
+| FY2025 10-K | 0000320193-25-000079 | `AAPL_10K_20250927.pdf` | 61 |
+
+`data/raw` is 37.3 MB (181 files), under the brief's 100 MB limit.
+
+### Test fixtures
+
+Three small PDFs are committed to Git in `tests/fixtures/` (not DVC), because CI has no access to the DVC remote:
+
+| Fixture | What it is | Used to test |
+|---|---|---|
+| `statement.pdf` | FY2025 PDF page 32, the income statement | table extraction |
+| `scanned.pdf` | FY2025 pages 5–7 rasterized at 300 DPI (`pdftoppm`) and rebuilt as an image-only PDF (`img2pdf`) | the OCR path |
+| `multicol.pdf` | JPMorgan Chase 10-K (accession 0000019617-25-000270), PDF page 10: Apple's filings have no multi-column page | reading order |
+
+Their sources are documented in `tests/fixtures/README.md`.
+
+![manifest.csv](img/p0-manifest.png)
+
+![A rendered page](img/p0-rendered-page.png)
 
 ## Part 1: Text extraction with OCR fallback
 Duration: 0:08:00
@@ -175,38 +236,182 @@ Rendered EDGAR PDFs almost never need OCR, so the scanned fixture is the only re
 </aside>
 
 ## Part 2: Tables and the hybrid extractor
-Duration: 0:05:00
+Duration: 0:08:00
 
-TODO (owner): fill in. Checklist from the brief:
+The `tables` stage finds the financial statements in each filing, extracts them with the best method for each page, and normalizes every number.
 
-- Bake-off on two or more statement pages: Camelot lattice, stream, network or hybrid, pdfplumber "text"; shape, parsing report, 10 hand-checked cells per method
-- `src/tables.py` hybrid extractor and its log of which method won
-- Normalization: parentheses, dashes, currency, footnote markers, scale, per-share exception; raw and normalized cells
-- Command: `dvc repro tables`
-- Results: bake-off table from `reports/tables_method.md`
-- Screenshot: a clean income statement CSV next to the PDF page
+### Finding the statement pages
+
+A page counts as a statement page when a statement title is (nearly) a whole line near the top of the page and the page has enough numbers. Two problems on the real filings were fixed: the Item 15 exhibit index was a false positive (fixed by limiting extra characters on the title line), and the short comprehensive income statement was missed (fixed by lowering the minimum number count to 20). The result is exactly pages 32 to 36 in both filings, with no false positives.
+
+### The bake-off
+
+Five methods on two statement pages, with 10 cells per method checked by hand against the page image:
+
+| Method | Income statement (p32) | Balance sheet (p34) |
+|---|---|---|
+| Camelot lattice | 0/10 | 0/10 |
+| Camelot stream | **10/10** | 5/10 (stopped at "Total assets") |
+| Camelot network | 0/10 (dropped every row label) | **10/10** |
+| Camelot hybrid | 0/10 | 0/10 |
+| pdfplumber text | 9/10 (dropped a closing parenthesis) | 10/10 (but split labels mid-word) |
+
+Two findings drive the design:
+
+1. **Camelot's accuracy score ranks the methods almost backwards.** Lattice and hybrid scored 100 on both pages yet got 0/10: accuracy measures how cleanly text fits into cells, not whether the structure is right.
+2. **No single method wins every statement.** Stream wins the income statement, network wins the balance sheet.
+
+### The hybrid extractor
+
+`src/tables.py` decides per page, with every threshold in `params.yaml` under `tables`:
+
+1. **Clean** the table: drop empty rows and columns and `$`-only columns, and join labels that wrap onto a second line.
+2. **Choose an order:** ruled pages try lattice first; borderless pages (all of Apple's statements) try stream first.
+3. **Check the structure:** minimum size, coverage of the page's numbers, and no values merged into the label column.
+4. **Score** each valid table (`accuracy − whitespace_weight × whitespace`) and accept the first one at or above `accept_score` (80); otherwise keep the best valid table as `best_below_threshold`.
+
+Every decision is logged in `tables_log.csv`. On the balance sheet, stream is tried first and rejected (coverage 40%), then network is accepted (score 87.95).
+
+| Page | Statement | Method chosen | Shape | Score |
+|---|---|---|---|---|
+| 32 | Income | stream | 27×4 | 90.38 |
+| 33 | Comprehensive income | stream | 16×4 | 87.21 |
+| 34 | Balance sheet | network | 39×3 | 87.95 |
+| 35 | Shareholders' equity | stream | 23×4 | 91.36 |
+| 36 | Cash flows | stream | 38×4 | 91.88 |
+
+### Normalization
+
+Raw and normalized grids are stored side by side (`.raw.csv` and `.norm.csv` in `data/tables/`):
+
+- `(1,234)` becomes −1,234; dashes become 0; `$`, commas and trailing footnote markers are stripped.
+- The scale comes from the caption. For Apple, money rows are × 1,000,000, share counts × 1,000, and per-share amounts stay unscaled.
+- Each row is tagged `header`, `money`, `shares` or `per_share`.
+
+Checked on the income statement: net income 112,010 becomes 112,010,000,000; (321) becomes −321,000,000; diluted EPS stays 7.46. On the balance sheet, total liabilities 285,508 plus total shareholders' equity 73,733 equals total assets 359,241. 25 unit tests in `tests/test_tables_normalize.py` cover the rules.
+
+### Run it
+
+```bash
+dvc repro tables
+python src/tables.py --input tests/fixtures --output /tmp/tables_fixture
+```
+
+The full bake-off, the 20 hand-checked cells and the reasoning are in `reports/tables_method.md`.
+
+![Income statement CSV next to the PDF page](img/p2-income-csv.png)
 
 ## Part 3: Layout detection and routing
-Duration: 0:05:00
+Duration: 0:06:00
 
-TODO (owner): fill in. Checklist from the brief:
+The `layout` stage finds the blocks on every page with a learned layout model, then sends each block to the right extractor.
 
-- `data/layout/{stem}.blocks.jsonl`, figure crops in `data/figures/`
-- Routing, reading order, section attachment
-- Command: `dvc repro layout` (or note if the stage is frozen, and why)
-- Results: audit table from `reports/layout_audit.md`
-- Screenshot: one QA overlay from `reports/layout/`
+### The model
+
+LayoutParser EfficientDet (`tf_efficientdet_d0`, trained on PubLayNet), with pages rendered at 150 DPI and boxes converted to PDF points with a top-left origin. The score threshold is 0.25: at 0.5, almost nothing was kept, since most correct blocks scored 0.28 to 0.45.
+
+### Routing
+
+| Block type | Sent to |
+|---|---|
+| Text, Title, List | pdfplumber within the block's box (OCR if empty) |
+| Table | Part 2's extractor, limited to the block's padded region |
+| Figure | cropped to `data/figures/` |
+
+Blocks are put in reading order (by column, then top to bottom), and each Text block is attached to the nearest preceding Title as its section. Output: `data/layout/{stem}.blocks.jsonl`.
+
+Routing helps tables directly: on the balance sheet, Camelot stream on the full page stopped at "Total assets" (coverage 40%), but stream limited to the layout region returned the whole statement (37×3, coverage 90%).
+
+### Audit on 10 pages
+
+Ten FY2025 pages covering every page type (cover, table of contents, prose, MD&A, statements, notes, auditor's report) were checked element by element:
+
+| Class | Elements | Correct | Partial | Missed | Wrong type | Detected |
+|---|---|---|---|---|---|---|
+| Text | 60 | 26 | 5 | 28 | 1 | 52% |
+| Title | 38 | 26 | 0 | 11 | 1 | 68% |
+| List | 4 | 2 | 0 | 2 | 0 | 50% |
+| Table | 8 | 5 | 0 | 3 | 0 | 63% |
+
+PubLayNet was trained on journal articles, not SEC filings, and it shows: it finds the statements reliably but misses about half the body text. The stage handles that rather than losing text:
+
+- **Missed text:** words in no block become `fallback` Text blocks, so no text is lost.
+- **Clipped boxes:** words near a box's edge snap into it (40 pt for tables, 15 pt for text). This removed about 30% of fallback blocks, the one- or two-word fragments that broke sentences.
+- **Duplicates and false tables:** boxes mostly covered by better boxes are dropped, and a Camelot result must lie inside the requested region.
+
+### Full run
+
+| | FY2024 | FY2025 |
+|---|---|---|
+| Blocks (after cleanup) | 871 | 834 |
+| Tables detected by the model | 29 | 31 |
+| Tables extracted (accepted or best below threshold) | 23 | 24 |
+
+### Run it
+
+```bash
+dvc repro layout
+```
+
+QA overlays for the audited pages, in both filings, are in `reports/layout/`; the per-page audit is in `reports/layout_audit.md`.
+
+![Layout overlay](img/p3-overlay.png)
+
+<aside class="negative">
+Recommendation from the audit: keep PubLayNet for table routing, where it is reliable, and rely on the fallback for text coverage. Part 4 tests whether Docling's layout model closes the text-recall gap.
+</aside>
 
 ## Part 4: Docling path and comparison
-Duration: 0:05:00
+Duration: 0:08:00
 
-TODO (owner): fill in. Checklist from the brief:
+The `parse_docling` stage converts every rendered PDF with Docling, as an alternative path next to the traditional one (not a replacement).
 
-- `src/docling_parse.py`, run as `python -m src.docling_parse`
-- Markdown, JSON, table CSVs, per-page Markdown for WER; HTML vs rendered-PDF comparison
-- Command: `dvc repro parse_docling`
-- Results: comparison table and recommendation from `reports/docling_comparison.md` (WER, cell F1, XBRL match rate for both paths)
-- Screenshot: one table, Docling vs traditional
+### What it writes
+
+`src/docling_parse.py` (run as `python -m src.docling_parse`, because the file name clashes with Docling's own `docling_parse` package) writes to `data/docling/`: Markdown, lossless JSON, every table as CSV, per-page Markdown (`export_to_markdown(page_no=n)`, which Part 9 needs for WER), and `{stem}.items.jsonl`.
+
+Docling writes bounding boxes with a bottom-left origin. Before any comparison, the stage converts them with `bbox.to_top_left_origin(page_height)` into `items.jsonl` (points, top-left), so they match our schema. The lossless JSON is left untouched.
+
+Setup: Docling 2.134.0, `do_ocr: false`, TableFormer `accurate` (from `params.yaml`).
+
+### Run it
+
+```bash
+dvc repro parse_docling
+```
+
+### Comparison, using the metrics of Parts 9 to 11
+
+| Dimension | Metric | Traditional | Docling |
+|---|---|---|---|
+| Text accuracy | WER, 16 ground-truth pages | **1.67%** | 6.32% |
+| Numeric fidelity (text) | numeric-token recall | **99.48%** | 87.43% |
+| Table structure | cell F1, 2 tables, 111 cells | 1.00 | 1.00 |
+| Numeric fidelity (statements) | XBRL match rate | **456/456** | 450/450 |
+| Reading order (cover pages) | WER | 3.74% pdfplumber, 59.87% layout-routed | **6.90%** |
+| Footnotes | separate labels | none | **footnote, caption** |
+| Throughput | s/page, p50 / p95 | **0.70 / 3.49** | 4.52 / 19.22 |
+| Memory | peak RSS | **1,055 MiB** | 3,597 MiB |
+
+Every number either path extracted matches XBRL. The difference is coverage: in both filings, Docling merged the first cash-flow row ("Cash, cash equivalents … beginning balances") into the column header, so 6 numbers never became data cells. The traditional path extracted that row.
+
+### PDF vs HTML
+
+The same filing (FY2024), converted from the original iXBRL HTML and from the rendered PDF:
+
+| | Rendered PDF | iXBRL HTML |
+|---|---|---|
+| Tables found | 51 | 63 |
+| Conversion time | 380–966 s | 39–97 s |
+| Pages and bboxes | yes (60 pages) | none |
+
+HTML finds more tables and is about 10× faster, but has no pages or boxes, so it cannot support the page-and-bbox citations the brief requires. Rendering changes table boundaries, not table content.
+
+### Recommendation
+
+Keep the **traditional pipeline as the primary path**: lowest WER (1.7% vs 6.3%), highest numeric recall (99.5% vs 87.4%), all 456 statement numbers matched to XBRL including the cash-flow row Docling dropped, and about 6× less compute. Use **Docling as the fallback** where the traditional path is weak: side-by-side layouts (cover-page WER 6.9% vs 59.9% for layout-routed text), footnote separation, and as an independent second reading of statement tables. The full comparison is in `reports/docling_comparison.md`.
+
+![A statement table, Docling vs traditional](img/p4-docling-table.png)
 
 ## Part 5: Metadata schema and provenance
 Duration: 0:08:00
@@ -475,59 +680,238 @@ Limits: seven pages, one company, one provider. The scan is a clean 300 DPI rast
 </aside>
 
 ## Part 8: DVC pipeline and CI
-Duration: 0:05:00
+Duration: 0:08:00
 
-TODO (owner): fill in. Checklist from the brief:
+Every step of the pipeline is a DVC stage in `dvc.yaml`, with its command, dependencies, parameters and outputs. `dvc.lock` records the hash of every output, so `dvc pull` gives anyone exactly our files, and `dvc repro` only re-runs a stage when its code, parameters or inputs change.
 
-- `dvc.yaml` with all nine canonical stages, `dvc.lock` committed, `dvc dag` output
-- A second `dvc repro` skips every stage
-- `.github/workflows/smoke.yml`: what it installs and runs; screenshot of a green PR run
-- Frozen stages, if any, and why
+### The stages
+
+The brief's nine canonical stages:
+
+`download` → `render` → `parse_pdfplumber`, `tables`, `layout`, `parse_docling` → `export` → `xbrl` → `evaluate`
+
+Three folders are inputs rather than stage outputs, so they are tracked with `dvc add`:
+
+| Pointer file | What it tracks |
+|---|---|
+| `data/managed.dvc` | the cached Textract responses (Part 7) |
+| `data/ground_truth.dvc` | the hand-typed answer key (Part 9) |
+| `data/bench.dvc` | the benchmark measurements (Part 10) |
+
+Every threshold and setting lives in `params.yaml`, so changing one re-runs only the stages that read it.
+
+```bash
+dvc stage list
+dvc dag
+```
+
+![dvc stage list](img/p8-dvc-stages.png)
 
 ### DVC remote access
 
-TODO (Preksha): remote type (S3, us-east-2), how read-only access works without credentials, and the exact `dvc remote` config graders will see. Keep it consistent with the README section.
+The data lives in an AWS S3 bucket (`lantern-dvc-team1-2026`, us-east-2), with two remotes in `.dvc/config`:
+
+| Remote | URL | Used for |
+|---|---|---|
+| `public` (default) | `https://lantern-dvc-team1-2026.s3.us-east-2.amazonaws.com/dvc` | reading: anyone can `dvc pull`, with no credentials |
+| `store` | `s3://lantern-dvc-team1-2026/dvc` | pushing: team members only |
+
+The bucket allows public reads of objects but not listing, and only the team's IAM user can write. To push, a team member sets the key locally; it goes into `.dvc/config.local`, which is never committed:
+
+```bash
+dvc remote default --local store
+dvc remote modify --local store access_key_id <key-id>
+dvc remote modify --local store secret_access_key <secret>
+dvc push -r store
+```
+
+### CI
+
+`.github/workflows/smoke.yml` runs on every pull request, with no EDGAR access, DVC remote or credentials: it installs the Python and system dependencies, runs the text and table scripts on the committed fixtures in `tests/fixtures/`, and then runs `pytest`. This is why every stage script accepts `--input` and `--output` arguments.
+
+![A green CI run on a pull request](img/p8-ci-green.png)
+
+### Results
+
+On a fresh clone of `main`:
+
+- `dvc pull` fetched all 12 data folders with no errors.
+- `dvc repro` skipped all 9 stages and both pointer files: a second run with no changes skips everything, as the brief requires.
+- `dvc metrics show` read `reports/metrics.json`, and `pytest -q` passed 65 tests.
+
+<aside class="negative">
+A lesson from building this: our <code>.gitignore</code> used <code>data/*</code> with <code>!data/*.dvc</code>. Git read it correctly, but DVC's own Git library treated the whole <code>data/</code> folder as ignored, so a plain <code>dvc pull</code> silently skipped <code>data/managed</code>, the first standalone pointer file. Listing each data folder explicitly (<code>/data/raw/</code>, <code>/data/managed/</code> …) fixed it, verified on a fresh clone.
+</aside>
 
 ## Part 9: Evaluation and regression tests
-Duration: 0:05:00
+Duration: 0:08:00
 
-TODO (owner): fill in. Checklist from the brief:
+The `evaluate` stage scores every extraction path against a hand-typed answer key.
 
-- Ground truth: 10 pages per filing across strata, two statement CSVs, conventions
-- WER and CER per page and stratum, numeric-token accuracy, cell P/R/F1, both paths
-- Command: `dvc repro evaluate`, `dvc metrics show`, `dvc metrics diff`
-- The documented failing test run
-- Screenshot: `reports/plots/drift.png`
+### Ground truth
+
+`data/ground_truth/` (tracked with `data/ground_truth.dvc`) holds:
+
+- **16 pages of text** (8 per filing), listed with their stratum and method in `pages.csv`: cover 2, prose 4, statement 6, notes 4.
+- **The FY2025 income statement and balance sheet** as CSVs, each keyed by **two people independently** (`keyer1`, `keyer2`), with differences checked against the page image and merged.
+
+The fixture answer keys for CI (statement, scanned and multi-column pages) are in `tests/fixtures/gt/`.
+
+The rules are in `reports/ground_truth_conventions.md`. The one that matters most: **type from the page image, never from parser output or the PDF's text layer**, since that is the same text pdfplumber reads and would make it look perfect. For long prose pages, starting from the original HTML was allowed, with every line checked against the image; the method is recorded per page.
+
+Agreement between the two keyers, before merging:
+
+| Table | Cells | Matching | F1 |
+|---|---|---|---|
+| Income statement (p32) | 57 | 56 | 0.9825 |
+| Balance sheet (p34) | 54 | 54 | 1.0000 |
+| Overall | 111 | 110 | **0.9912** |
+
+### Run it
+
+```bash
+dvc repro evaluate
+dvc metrics show
+```
+
+Scoring uses one normalization for every path: Unicode NFKC, curly quotes to straight, all dashes to "-", "$" separated from the number, whitespace collapsed, lowercase. Punctuation is kept, because stripping it would hide sign errors such as (321).
+
+### Results: text
+
+| Path | WER | CER | Numeric recall |
+|---|---|---|---|
+| pdfplumber | **1.67%** | **1.54%** | **99.48%** |
+| layout-routed | 12.30% | 10.89% | 99.48% |
+| Docling | 6.32% | 4.27% | 87.43% |
+
+By stratum (WER):
+
+| Stratum | Pages | pdfplumber | layout | Docling |
+|---|---|---|---|---|
+| cover | 2 | 3.74% | 59.87% | 6.90% |
+| prose | 4 | 0.11% | 5.37% | 4.05% |
+| statement | 6 | 1.67% | 4.74% | 9.87% |
+| notes | 4 | 2.20% | 6.78% | 2.98% |
+
+The layout path's high cover-page WER comes from reading order: LayoutParser reorders the cover's side-by-side fields (Part 3), while plain pdfplumber reads them row by row.
+
+### Results: tables
+
+| Path | Tables | Ground-truth cells | Precision | Recall | F1 |
+|---|---|---|---|---|---|
+| Traditional | 2 | 111 | 1.00 | 1.00 | **1.00** |
+| Docling | 2 | 111 | 1.00 | 1.00 | **1.00** |
+
+### Regression tests
+
+`tests/test_quality.py` checks the fixtures against thresholds set from the measured baseline.
+
+TODO (Pradyumna): the documented failing run (which change broke the parser, and the failing output), the `dvc metrics diff` output and the drift plot, from `reports/eval.md`.
+
+![Drift signal for two pipeline versions](img/p9-drift.png)
 
 ## Part 10: Cost and throughput
-Duration: 0:05:00
+Duration: 0:06:00
 
-TODO (owner): fill in. Checklist from the brief:
+`src/bench.py` times the pipeline's own functions on all 61 pages of the FY2025 filing (within the brief's 50 to 100), and writes one CSV per stage to `data/bench/` (tracked with `data/bench.dvc`).
 
-- Batch of 50 to 100 pages per stage: s/page p50 and p95, peak RSS, failures, cold vs warm
-- Cost per 1,000 pages and for 5,000 filings a year, open source vs managed, with assumptions
-- Bottleneck stages and hardware recommendation; machine specs
-- Results: table from `reports/benchmarks.md`
+### Machine
+
+Intel Core 7 150U (10 cores, 12 threads), 15.7 GiB RAM, no GPU, Windows, Python 3.11.2 (from `data/bench/machine.json`). Each stage ran in its own fresh process, on mains power with other heavy applications closed.
+
+### Run it
+
+```bash
+python src/bench.py --machine
+python src/bench.py --stage parse_pdfplumber
+python src/bench.py --stage layout --run 1
+python src/bench.py --summarize
+```
+
+### Per-stage throughput
+
+| Stage | Pages | s/page p50 | s/page p95 | Peak RSS MiB | Failures |
+|---|---|---|---|---|---|
+| parse_pdfplumber | 61 | 0.096 | 0.233 | 513 | 0 |
+| ocr_tesseract (forced on every page) | 61 | 1.505 | 2.895 | 85 | 0 |
+| tables (statement pages) | 5 | 0.210 | 0.798 | 537 | 0 |
+| layout, full stage | 61 | 0.58 | 3.19 | n/a | 0 |
+| parse_docling | 61 | 4.517 | 19.215 | 3,597 | 0 |
+| export | 61 | 0.005 | 0.005 | 105 | 0 |
+
+No real page triggers OCR, so OCR was forced on every page to measure what a scanned filing would cost. Tesseract runs as a separate program, so its own memory is not in Python's RSS.
+
+**Cold vs warm.** Model loading takes 7.5 s (layout) and 9.2 s (Docling) on a first run, and less than half that on a second run, when the weights are in the operating system's file cache. A long-running worker pays it once.
+
+### Cost
+
+Assumptions: an m7i-flex.large (2 vCPU, 8 GiB) at $0.09576/hour (AWS on-demand, US East Ohio, checked 2026-10-08), assumed about as fast as the benchmark laptop; 5,000 filings a year × 60.5 pages = 302,500 pages; engineering time not included.
+
+| Path | s/page | USD per 1,000 pages | USD per year |
+|---|---|---|---|
+| Traditional, p50 | 0.70 | 0.019 | 5.63 |
+| Traditional, p95 | 3.49 | 0.093 | 28.08 |
+| Traditional + OCR on every page, p50 | 2.21 | 0.059 | 17.74 |
+| Docling, p50 | 4.52 | 0.120 | 36.35 |
+| Docling, p95 | 19.22 | 0.511 | 154.62 |
+| **Textract, Tables + Layout (list price)** | n/a | **15.00** | **4,537.50** |
+
+Even the most pessimistic open-source figure is about 29× cheaper than Textract, and the traditional path at the median about 800× cheaper.
+
+### Bottlenecks and recommendations
+
+- **On the traditional path, `layout` is the bottleneck:** 83% of the median time per page, a little more than half of it Camelot and routing around the model.
+- **Docling is the bottleneck of the whole pipeline:** 4.5 s/page at the median, about 6.5× the entire traditional path, concentrated on table-heavy pages.
+- **CPU, not GPU.** A g4dn.xlarge (one T4) costs 5.5× more per hour; at our volume Docling on CPU costs $36–155 a year, the most a GPU could save. A GPU was not benchmarked, so no speed-up is claimed.
+- **Concurrency:** one worker per vCPU, except Docling, which fits one worker per 8 GiB machine (3.6 GiB peak). Parallelize by filing, and load each model once per worker.
+- **EDGAR's 10 requests/second:** about 3 requests per filing, so 5,000 filings need about 25 minutes a year. Download is not a bottleneck, but all workers must share one rate limiter.
+
+Full tables, cold-start figures and limitations are in `reports/benchmarks.md`.
+
+![Benchmark summary](img/p10-summary.png)
 
 ## Part 11: XBRL extraction and validation
-Duration: 0:05:00
+Duration: 0:06:00
 
-TODO (owner): fill in. Checklist from the brief:
+The filing tells us its own numbers in machine-readable form. The `xbrl` stage uses that as the answer key for the tables both paths extracted.
 
-- `src/xbrl.py` with Arelle, `data/xbrl/facts.csv`, `config/label_map.yaml`
-- Mapping method per line (manual, label, fuzzy)
-- Match rate per statement and per path (traditional and Docling)
-- Every non-match with its diagnosed cause and fix, from `reports/xbrl.md`
-- Screenshot: the notebook comparison table
+### How it works
+
+- `src/xbrl.py` loads each unpacked iXBRL filing (from Part 0) with **Arelle** and extracts every numeric fact with its concept, value, period, unit, decimals and dimensions, de-duplicated, keeping non-dimensional facts for statement totals. Output: `data/xbrl/facts.csv`.
+- **Row labels are mapped to XBRL concepts** in three steps: a curated dictionary for key lines (`config/label_map.yaml`), then the filing's own label linkbase, then fuzzy matching. The method is recorded per line.
+- **Values are compared** with a tolerance from the fact's `decimals`, handling scale and sign conventions, and each line is classified as `match`, `sign`, `scale_x…`, `mismatch`, `pdf_missing` or `xbrl_missing`.
+
+### Run it
+
+```bash
+dvc repro xbrl
+```
+
+### Results
+
+| Path | Statement numbers checked (4 statements × 2 filings) | Match rate |
+|---|---|---|
+| Traditional | 456 | **100%** |
+| Docling | 450 | **100%** |
+
+Every number either path extracted matches the filing's XBRL. The 6-number difference is coverage, not accuracy: Docling merged the first cash-flow row into the column header in both filings (Part 4), so those numbers never reached the comparison.
+
+TODO (Pradyumna): from `reports/xbrl.md`, the mapping method counts (manual / label / fuzzy), the match rate per statement, and every non-match status found along the way with its diagnosed cause and fix.
+
+The full comparison is in `reports/xbrl.md` and `notebooks/xbrl_validation.ipynb`.
+
+![XBRL comparison table](img/p11-xbrl-table.png)
 
 ## Summary and recommendations
 Duration: 0:03:00
 
-TODO: one short paragraph each, using numbers from the reports:
+**Primary parsing path (Part 4).** Keep the traditional pipeline (pdfplumber text, the Camelot hybrid extractor, LayoutParser routing) as the primary path. It has the lowest text error (WER 1.67% vs 6.32% for Docling), the highest numeric recall (99.48% vs 87.43%), and it matched XBRL on all 456 statement numbers. Use Docling as the fallback for side-by-side layouts, footnote separation, and as an independent second reading of the statements.
 
-- Primary parsing path and fallback (Part 4)
-- Source-of-truth format and the format for Case Study 2 (Part 6)
-- Build vs buy (Parts 7 and 10)
+**Formats (Part 6).** JSONL is the source of truth: it keeps every field, including the page, bbox and raw and normalized cells, that validation and citation need. Markdown feeds Case Study 2: it answered retrieval questions as accurately as JSONL at about a fifth of the tokens, and every block keeps a provenance comment that leads back to its JSONL record.
+
+**Build vs buy (Parts 7 and 10).** AWS Textract matched the open-source pipeline number for number on every page compared, and at list price it costs about $4,540 a year for 5,000 filings, against $6 to $155 a year of compute for the open-source paths. Keep it as an off-by-default, cached fallback, triggered by a validation failure rather than sent every page.
+
+**Reproducibility (Part 8).** A fresh clone rebuilds everything with `dvc pull` and `dvc repro`, with no credentials, and every number in this Codelab traces back to a file in `reports/` or `data/`.
 
 ### Links
 
