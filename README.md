@@ -38,44 +38,8 @@ Everything is a DVC stage driven by `params.yaml`, so the corpus and every metri
 
 ## Architecture Diagram
 
-```mermaid
-flowchart LR
-    EDGAR[(SEC EDGAR)] -->|sec-edgar-downloader<br/>User-Agent, ≤10 req/s| download
-    download --> RAW[data/raw/<br/>full-submission.txt<br/>unpacked/ .htm .xsd]
-    RAW --> render
-    render -->|Playwright Chromium, Letter| REN[data/rendered/<br/>*.pdf + manifest.csv]
+![System Architecture](docs/img/architecture.png)
 
-    REN --> parse_pdfplumber
-    parse_pdfplumber --> PARSED[data/parsed/<br/>page .txt, words.jsonl, ocr_log.csv]
-    REN --> tables
-    tables --> TAB[data/tables/<br/>raw + normalized CSV]
-    REN --> layout
-    layout --> LAY[data/layout/ blocks.jsonl<br/>data/figures/]
-    REN --> parse_docling
-    RAW --> parse_docling
-    parse_docling --> DOC[data/docling/<br/>.md .json .csv, per-page md]
-
-    MAN[(data/managed/<br/>Textract cache, dvc add)] -.->|fallback, disabled by default| parse_pdfplumber
-    MAN -.-> export
-
-    LAY --> export
-    PARSED --> export
-    export --> EXP[data/export/<br/>.jsonl .md .txt]
-
-    RAW --> xbrl
-    TAB --> xbrl
-    DOC --> xbrl
-    xbrl --> XB[data/xbrl/<br/>facts.csv, comparison.csv]
-
-    GT[(data/ground_truth/<br/>tests/fixtures/gt/)] --> evaluate
-    FIX[tests/fixtures/] --> parse_fixtures
-    parse_fixtures --> evaluate
-    PARSED --> evaluate
-    LAY --> evaluate
-    DOC --> evaluate
-    TAB --> evaluate
-    evaluate --> MET[reports/metrics.json<br/>eval_pages.csv, eval_tables.csv]
-```
 
 ## Repository Layout
 
@@ -294,6 +258,6 @@ We used Claude (Anthropic) for initial ideas on the architecture diagram, for he
 
 WE ATTEST THAT WE HAVEN'T USED ANY OTHER STUDENTS' WORK IN OUR ASSIGNMENT AND ABIDE BY THE POLICIES LISTED IN THE STUDENT HANDBOOK.
 
-- Member 1: Preksha Praveen — 34%
+- Member 1: Preksha Praveen — 33%
 - Member 2: Pradyumna Reddy Cherla — 33%
 - Member 3: Pranav Waghmare — 33%
