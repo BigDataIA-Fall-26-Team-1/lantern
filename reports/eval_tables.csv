@@ -1,0 +1,7 @@
+stem,page,statement,source,precision,recall,f1,tp,cells_gt,cells_pred
+AAPL_10K_20250927,32,income,traditional,1.0,1.0,1.0,57,57,57
+AAPL_10K_20250927,32,income,docling,1.0,1.0,1.0,57,57,57
+AAPL_10K_20250927,34,balance,traditional,1.0,1.0,1.0,54,54,54
+AAPL_10K_20250927,34,balance,docling,1.0,1.0,1.0,54,54,54
+AAPL_10K_20250927,32,income,keyer1_vs_keyer2,0.9825,0.9825,0.9825,56,57,57
+AAPL_10K_20250927,34,balance,keyer1_vs_keyer2,1.0,1.0,1.0,54,54,54

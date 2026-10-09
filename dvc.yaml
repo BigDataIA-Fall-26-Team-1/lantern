@@ -113,3 +113,22 @@ stages:
       - tables
     outs:
       - data/xbrl
+
+  evaluate:
+    cmd: python src/evaluate.py --out reports
+    deps:
+      - src/evaluate.py
+      - src/tables.py
+      - data/ground_truth
+      - data/parsed
+      - data/layout
+      - data/docling
+      - data/tables
+    metrics:
+      - reports/metrics.json:
+          cache: false
+    outs:
+      - reports/eval_pages.csv:
+          cache: false
+      - reports/eval_tables.csv:
+          cache: false

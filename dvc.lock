@@ -516,3 +516,52 @@ stages:
       md5: 7eb20270ba95aebe0293203d0eb0c8c4.dir
       size: 497671
       nfiles: 3
+  evaluate:
+    cmd: python src/evaluate.py --out reports
+    deps:
+    - path: data/docling
+      hash: md5
+      md5: 5ef741e98343e47fa46ca455e8c02d01.dir
+      size: 18766220
+      nfiles: 294
+    - path: data/ground_truth
+      hash: md5
+      md5: 6dabd11bece189c994d20a28d1d61def.dir
+      size: 58339
+      nfiles: 24
+    - path: data/layout
+      hash: md5
+      md5: 50fc88b6ca1fdd84c21ab3088e2597bd.dir
+      size: 1158924
+      nfiles: 3
+    - path: data/parsed
+      hash: md5
+      md5: 60d480cc629c17622fdf54c1c5bd3132.dir
+      size: 14171803
+      nfiles: 125
+    - path: data/tables
+      hash: md5
+      md5: 97bd0b285c54dc5e3fff61c9c742c97a.dir
+      size: 40732
+      nfiles: 22
+    - path: src/evaluate.py
+      hash: md5
+      md5: cf76c85f535ecf1217a853598f501059
+      size: 13714
+    - path: src/tables.py
+      hash: md5
+      md5: 17a13a09cd299b5d9b958c1445bb3803
+      size: 21383
+    outs:
+    - path: reports/eval_pages.csv
+      hash: md5
+      md5: 6d5a52fc2044200975d41bbb846c9c12
+      size: 3364
+    - path: reports/eval_tables.csv
+      hash: md5
+      md5: 75c796bba5204bbdc3b724ba576cbd5a
+      size: 450
+    - path: reports/metrics.json
+      hash: md5
+      md5: d9aee24ce32e9eb571953a3e729ad1c0
+      size: 1913

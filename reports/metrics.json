@@ -1,1 +1,109 @@
-{}
+{
+  "text": {
+    "docling": {
+      "wer": 0.0632,
+      "cer": 0.0427,
+      "numeric_recall": 0.8743,
+      "pages": 16
+    },
+    "layout": {
+      "wer": 0.123,
+      "cer": 0.1089,
+      "numeric_recall": 0.9948,
+      "pages": 16
+    },
+    "pdfplumber": {
+      "wer": 0.0167,
+      "cer": 0.0154,
+      "numeric_recall": 0.9948,
+      "pages": 16
+    }
+  },
+  "text_by_stratum": {
+    "cover": {
+      "docling": {
+        "wer": 0.069,
+        "cer": 0.0645,
+        "pages": 2
+      },
+      "layout": {
+        "wer": 0.5987,
+        "cer": 0.5371,
+        "pages": 2
+      },
+      "pdfplumber": {
+        "wer": 0.0374,
+        "cer": 0.0416,
+        "pages": 2
+      }
+    },
+    "notes": {
+      "docling": {
+        "wer": 0.0298,
+        "cer": 0.0171,
+        "pages": 4
+      },
+      "layout": {
+        "wer": 0.0678,
+        "cer": 0.0628,
+        "pages": 4
+      },
+      "pdfplumber": {
+        "wer": 0.022,
+        "cer": 0.0238,
+        "pages": 4
+      }
+    },
+    "prose": {
+      "docling": {
+        "wer": 0.0405,
+        "cer": 0.0124,
+        "pages": 4
+      },
+      "layout": {
+        "wer": 0.0537,
+        "cer": 0.0493,
+        "pages": 4
+      },
+      "pdfplumber": {
+        "wer": 0.0011,
+        "cer": 0.0006,
+        "pages": 4
+      }
+    },
+    "statement": {
+      "docling": {
+        "wer": 0.0987,
+        "cer": 0.0727,
+        "pages": 6
+      },
+      "layout": {
+        "wer": 0.0474,
+        "cer": 0.0366,
+        "pages": 6
+      },
+      "pdfplumber": {
+        "wer": 0.0167,
+        "cer": 0.0109,
+        "pages": 6
+      }
+    }
+  },
+  "tables": {
+    "docling": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "tables": 2,
+      "cells_gt": 111
+    },
+    "traditional": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "tables": 2,
+      "cells_gt": 111
+    }
+  },
+  "keyer_agreement_f1": 0.9912
+}
