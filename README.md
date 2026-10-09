@@ -5,7 +5,7 @@ DAMG 7245 Big Data and Intelligent Analytics · Fall 2026 · Case Study 1 (Part 
 | | |
 |---|---|
 | **Codelab** | [https://bigdataia-fall-26-team-1.github.io/lantern/lantern-case-study-1/](https://bigdataia-fall-26-team-1.github.io/lantern/lantern-case-study-1/) |
-| **Demo video** | TODO: link |
+| **Demo video** | [Team 1 Project LANTERN video](https://drive.google.com/file/d/1lCoqemP_CqSJkEtIJpjWF-UANFHNMA95/view?usp=drive_link) |
 | **Deployed app** | [http://52.15.107.141:8501](http://52.15.107.141:8501) |
 
 ## Project Summary
@@ -217,7 +217,7 @@ A step-by-step walkthrough of the pipeline, one step per Part, with commands, re
 
 ## Demo Video
 
-TODO: link
+**URL:** [Team 1 Project LANTERN video](https://drive.google.com/file/d/1lCoqemP_CqSJkEtIJpjWF-UANFHNMA95/view?usp=drive_link) (hosted on Google Drive; architecture tour, pipeline run, one number traced end to end, Docling vs traditional, XBRL validation, build vs buy)
 
 ## Deployed App
 
