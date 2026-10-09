@@ -28,3 +28,4 @@ PyYAML==6.0.3
 sec-edgar-downloader==5.1.0
 jiwer==4.0.0
 arelle-release==2.46.1
+psutil==7.2.2
