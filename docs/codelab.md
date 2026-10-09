@@ -355,7 +355,13 @@ dvc repro layout
 
 QA overlays for the audited pages, in both filings, are in `reports/layout/`; the per-page audit is in `reports/layout_audit.md`.
 
-![Layout overlay](img/p3-overlay.png)
+**Where it works:** on the FY2025 income statement (page 32), one tight Table box covers the whole statement, so Camelot gets exactly the right region. Only the statement title above it is missed.
+
+![Layout overlay, FY2025 income statement (page 32)](img/p3-overlay.png)
+
+**Where it fails:** on the FY2025 cover page (page 1), the model draws a page-wide Table box (score 0.25) and a page-wide Figure box (score 0.38), and labels the Nasdaq column a List. This is PubLayNet's domain shift: it was trained on journal articles, not SEC cover pages. No text is lost, though: the cover's words still reach the corpus through the fallback blocks.
+
+![Layout overlay, FY2025 cover page (page 1)](img/p3-overlay-cover.png)
 
 <aside class="negative">
 Recommendation from the audit: keep PubLayNet for table routing, where it is reliable, and rely on the fallback for text coverage. Part 4 tests whether Docling's layout model closes the text-recall gap.
@@ -750,22 +756,22 @@ The `evaluate` stage scores every extraction path against a hand-typed answer ke
 
 ### Ground truth
 
-`data/ground_truth/` (tracked with `data/ground_truth.dvc`) holds:
+`data/ground_truth/` (tracked with `data/ground_truth.dvc`), with fixture copies in `tests/fixtures/gt/` for CI. **18 pages: 8 per filing, plus 2 fixtures:**
 
-- **16 pages of text** (8 per filing), listed with their stratum and method in `pages.csv`: cover 2, prose 4, statement 6, notes 4.
-- **The FY2025 income statement and balance sheet** as CSVs, each keyed by **two people independently** (`keyer1`, `keyer2`), with differences checked against the page image and merged.
+| Stratum | FY2025 | FY2024 |
+|---|---|---|
+| Statements | p32 income, p34 balance sheet, p36 cash flows | same pages |
+| Notes | p40, p45 | p40, p45 |
+| Prose | p5, p20 | p5, p20 |
+| Cover | p1 | p1 |
+| Multi-column | `multicol.pdf` fixture (shared) | |
+| Scanned | `scanned.pdf` fixture, page 1 (shared) | |
 
-The fixture answer keys for CI (statement, scanned and multi-column pages) are in `tests/fixtures/gt/`.
+The filings contain no multi-column or scanned page, so those two strata use the Part 0 fixtures, as the brief allows.
 
-The rules are in `reports/ground_truth_conventions.md`. The one that matters most: **type from the page image, never from parser output or the PDF's text layer**, since that is the same text pdfplumber reads and would make it look perfect. For long prose pages, starting from the original HTML was allowed, with every line checked against the image; the method is recorded per page.
+**How the pages were made:** typed from the rendered page image, or "html-assisted" (copied from the original HTML filing, a different source from the PDF text layer the parsers read, then corrected against the page image). The method for every page is in `data/ground_truth/pages.csv`. **No ground truth was made from parser output.** The rules are in `reports/ground_truth_conventions.md`.
 
-Agreement between the two keyers, before merging:
-
-| Table | Cells | Matching | F1 |
-|---|---|---|---|
-| Income statement (p32) | 57 | 56 | 0.9825 |
-| Balance sheet (p34) | 54 | 54 | 1.0000 |
-| Overall | 111 | 110 | **0.9912** |
+**Tables:** the FY2025 income statement and balance sheet (111 cells) were keyed by two people independently. They agreed on 110 of 111 cells (F1 0.991). The one difference, a digit transposition in the 2024 diluted share count (15,048,095 vs 15,408,095), was resolved against the page image: 15,408,095.
 
 ### Run it
 
@@ -774,41 +780,87 @@ dvc repro evaluate
 dvc metrics show
 ```
 
-Scoring uses one normalization for every path: Unicode NFKC, curly quotes to straight, all dashes to "-", "$" separated from the number, whitespace collapsed, lowercase. Punctuation is kept, because stripping it would hide sign errors such as (321).
+Both sides of every comparison get the same normalization: Unicode NFKC, curly quotes to straight, dashes to "-", "$" separated, whitespace collapsed, lowercase. **Punctuation is kept**, so a lost sign such as (321) becoming 321 counts as an error. Tables are compared as (row label, year, occurrence) → value, so tables of different shapes are compared fairly.
 
-### Results: text
+### Results on the filings (16 pages)
 
-| Path | WER | CER | Numeric recall |
+| Source | WER | CER | Numeric recall |
 |---|---|---|---|
-| pdfplumber | **1.67%** | **1.54%** | **99.48%** |
-| layout-routed | 12.30% | 10.89% | 99.48% |
-| Docling | 6.32% | 4.27% | 87.43% |
+| pdfplumber | **1.67%** | **1.54%** | **99.5%** |
+| Docling | 6.32% | 4.27% | 87.4% |
+| layout | 12.30% | 10.89% | 99.5% |
 
-By stratum (WER):
+WER per stratum:
 
-| Stratum | Pages | pdfplumber | layout | Docling |
-|---|---|---|---|---|
-| cover | 2 | 3.74% | 59.87% | 6.90% |
-| prose | 4 | 0.11% | 5.37% | 4.05% |
-| statement | 6 | 1.67% | 4.74% | 9.87% |
-| notes | 4 | 2.20% | 6.78% | 2.98% |
+| Stratum (pages) | pdfplumber | Docling | layout |
+|---|---|---|---|
+| Statements (6) | 1.67% | 9.87% | 4.74% |
+| Notes (4) | 2.20% | 2.98% | 6.78% |
+| Prose (4) | 0.11% | 4.05% | 5.37% |
+| Cover (2) | 3.74% | 6.90% | **59.87%** |
 
-The layout path's high cover-page WER comes from reading order: LayoutParser reorders the cover's side-by-side fields (Part 3), while plain pdfplumber reads them row by row.
+Tables (111 double-keyed cells): **F1 1.0** for both the traditional path and Docling.
 
-### Results: tables
+Fixtures (pdfplumber with the OCR fallback, as run in CI):
 
-| Path | Tables | Ground-truth cells | Precision | Recall | F1 |
-|---|---|---|---|---|---|
-| Traditional | 2 | 111 | 1.00 | 1.00 | **1.00** |
-| Docling | 2 | 111 | 1.00 | 1.00 | **1.00** |
+| Fixture | WER |
+|---|---|
+| Statement (FY2025 p32) | 2.27% |
+| Multi-column | 7.62% |
+| Scanned (OCR) | 0.00% |
+
+### Findings
+
+1. **pdfplumber reads text best on every stratum:** it reads the text layer directly, with no model between the page and the words.
+2. **Docling misses about 13% of a page's numbers** (numeric recall 87.4%), most on statements. Part 11 found one cause: Docling merged the first cash-flow row into the column header. Where it does find tables, they are exact (F1 1.0).
+3. **Layout's reading order is weak on form-like pages:** 60% WER on the cover, where the Part 3 audit found page-sized low-confidence Table and Figure boxes. On statements, notes and prose it stays at 5–7%, with every number present.
+4. **Multi-column is pdfplumber's hardest stratum** (7.6%): it reads straight across the two side-by-side tables, interleaving their rows, while the ground truth reads the left table, then the right.
+5. **OCR scored 0.0 WER on the scanned fixture** (544 words). The image is a clean digital render, so this is a best case for Tesseract, not a typical one.
+6. **Evaluation found a Part 4 bug:** Docling's per-page Markdown was shifted by one page (its p32 file held p31). Its WER was 90% until the fix; the numbers above are after it.
 
 ### Regression tests
 
-`tests/test_quality.py` checks the fixtures against thresholds set from the measured baseline.
+`tests/test_quality.py` runs Parts 1 and 2 on the fixtures, grades them with `evaluate.py`, and compares the results with thresholds in `params.yaml` (`eval.thresholds`): the measured baseline plus a margin.
 
-TODO (Pradyumna): the documented failing run (which change broke the parser, and the failing output), the `dvc metrics diff` output and the drift plot, from `reports/eval.md`.
+| Check | Measured | Fails if |
+|---|---|---|
+| Statement text WER | 2.27% | above 5% |
+| Numeric recall | 100% | below 98% |
+| Table cell F1 | 1.0 | below 0.98 |
+| Scanned (OCR) WER | 0.0% | above 5% |
+
+`pytest -q` passes 65 tests, in CI with no network, DVC data or credentials.
+
+**A failing run, on purpose.** With Part 2's structural guards switched off and lattice tried first (a temporary parameter file, `LANTERN_PARAMS=/tmp/params_broken.yaml`), the extractor fell back to lattice fragments with no year headers. **Table cell F1 fell from 1.0 to 0.0**, and the test failed:
+
+```text
+FAILED tests/test_quality.py::test_table_cell_f1 - AssertionError: table cell...
+E       AssertionError: table cell F1 0.0000 is below 0.98
+1 failed, 2 passed, 1 skipped in 18.73s
+```
+
+Both text tests still passed, as they should: the break was in table structure only. Full logs: `reports/evidence/quality_failing_run.txt` and `quality_passing_run.txt`.
+
+### Drift between two pipeline versions
+
+`src/plot_drift.py` writes `reports/plots/drift.png`. The signal is layout block length (words per block), both filings, with Part 3's text-snapping distance at 0 pt and at 15 pt:
+
+| | 0 pt | 15 pt |
+|---|---|---|
+| Blocks | 1,796 | 1,705 (−5.1%) |
+| Blocks under 5 words | 35.0% | 31.6% |
+| Median words per block | 8 | 9 |
+| Total words kept | 61,375 | 61,423 |
+
+The drop is concentrated in 1- and 2-word blocks: clipped words joining their paragraph instead of standing alone.
 
 ![Drift signal for two pipeline versions](img/p9-drift.png)
+
+`dvc metrics diff` compares `reports/metrics.json` with another branch; its output is in `reports/eval.md`.
+
+<aside class="negative">
+Limits: 16 filing pages and two fixtures, with only two tables double-keyed. The multi-column and scanned strata use fixtures, and the scan is a clean render. Fixture metrics cover pdfplumber only, since CI does not run layout or Docling.
+</aside>
 
 ## Part 10: Cost and throughput
 Duration: 0:06:00
@@ -873,13 +925,27 @@ Full tables, cold-start figures and limitations are in `reports/benchmarks.md`.
 ## Part 11: XBRL extraction and validation
 Duration: 0:06:00
 
-The filing tells us its own numbers in machine-readable form. The `xbrl` stage uses that as the answer key for the tables both paths extracted.
+The filing tells us its own numbers in machine-readable form. The `xbrl` stage uses that as the answer key for every number in the extracted statement tables, for both filings and both table paths.
 
-### How it works
+### What was checked
 
-- `src/xbrl.py` loads each unpacked iXBRL filing (from Part 0) with **Arelle** and extracts every numeric fact with its concept, value, period, unit, decimals and dimensions, de-duplicated, keeping non-dimensional facts for statement totals. Output: `data/xbrl/facts.csv`.
-- **Row labels are mapped to XBRL concepts** in three steps: a curated dictionary for key lines (`config/label_map.yaml`), then the filing's own label linkbase, then fuzzy matching. The method is recorded per line.
-- **Values are compared** with a tolerance from the fact's `decimals`, handling scale and sign conventions, and each line is classified as `match`, `sign`, `scale_x…`, `mismatch`, `pdf_missing` or `xbrl_missing`.
+- **Traditional:** Part 2's normalized tables (`data/tables/*.norm.csv`), already scaled.
+- **Docling:** Part 4's table CSVs, scaled with Part 2's normalizer and the page caption.
+- **Statements:** income, comprehensive income, balance sheet, cash flows. The statement of shareholders' equity is out of scope: it is a grid of equity components tagged with dimensions, not a label-by-year table.
+
+`src/xbrl.py` loads each unpacked iXBRL filing with **Arelle**: 957 numeric facts in `aapl-20240928.htm` and 962 in `aapl-20250927.htm`. Arelle reports a period ending September 27 as midnight on September 28, so one day is subtracted from every end date before matching.
+
+### Method
+
+**Label to concept**, in order, with the method recorded for every line:
+
+1. **Curated** (`config/label_map.yaml`, 27 entries): dimensional lines (Products and Services are slices of a total), labels printed twice, and the cases diagnosed below.
+2. **Label linkbase:** the filing's own labels, all roles.
+3. **Fuzzy:** a close spelling match (`xbrl.fuzzy_cutoff: 0.88`).
+
+Ambiguity is resolved by **period type**: a balance sheet line is a balance at a date (an instant concept), and a flow statement line is a change over the year (a duration concept).
+
+**Comparison:** the tolerance comes from the fact's `decimals` (`-6` gives ±0.5 million). Each line gets a status: `match`, `match_negated` (the same amount printed with a negated label, such as an outflow in parentheses that XBRL stores as positive), `sign`, `scale_xN`, `mismatch`, `xbrl_missing` or `unmapped`.
 
 ### Run it
 
@@ -887,20 +953,55 @@ The filing tells us its own numbers in machine-readable form. The `xbrl` stage u
 dvc repro xbrl
 ```
 
+Outputs: `data/xbrl/facts.csv`, `comparison.csv` and `summary.json`, plus `notebooks/xbrl_validation.ipynb`.
+
 ### Results
 
-| Path | Statement numbers checked (4 statements × 2 filings) | Match rate |
+| Statement | Traditional | Docling |
 |---|---|---|
-| Traditional | 456 | **100%** |
-| Docling | 450 | **100%** |
+| Income | 114 / 114 | 114 / 114 |
+| Comprehensive income | 60 / 60 | 60 / 60 |
+| Balance sheet | 108 / 108 | 108 / 108 |
+| Cash flows | 174 / 174 | 168 / 168 |
+| **All** | **456 / 456 (100%)** | **450 / 450 (100%)** |
 
-Every number either path extracted matches the filing's XBRL. The 6-number difference is coverage, not accuracy: Docling merged the first cash-flow row into the column header in both filings (Part 4), so those numbers never reached the comparison.
+Of these, 84 per path are `match_negated` (72 in cash flows, 12 in comprehensive income). **No number on either path is a mismatch, a sign error or a scale error.**
 
-TODO (Pradyumna): from `reports/xbrl.md`, the mapping method counts (manual / label / fuzzy), the match rate per statement, and every non-match status found along the way with its diagnosed cause and fix.
+![XBRL comparison, FY2025 income statement](img/p11-xbrl-table.png)
 
-The full comparison is in `reports/xbrl.md` and `notebooks/xbrl_validation.ipynb`.
+### How we got there: two runs
 
-![XBRL comparison table](img/p11-xbrl-table.png)
+**Run 1, automatic mapping only** (the linkbase and fuzzy tiers, with a minimal curated map):
+
+| | Traditional | Docling |
+|---|---|---|
+| match | 327 | 327 |
+| mismatch / scale error | 0 / 0 | 0 / 0 |
+| sign | 3 | 3 |
+| xbrl_missing | 12 | 6 |
+| unmapped | 114 | 114 |
+| **Match rate** | **72%** | **73%** |
+
+Every number that could be mapped was already correct. **The gap was entirely mapping and lookup, not extraction.** Every non-match was diagnosed:
+
+| Cause | Example | Fix |
+|---|---|---|
+| Same label on a balance concept and a change concept | "Accounts payable": `AccountsPayableCurrent` vs `IncreaseDecreaseInAccountsPayable` | disambiguate by period type |
+| Several concepts share a generic label | "Other" (3 lines in cash flows), "Deferred revenue" | curated entries |
+| Extension concept changed between filings | derivative lines tagged `aapl:…` in FY2024, `us-gaap:…CashFlowHedge…` in FY2025 | curated entries list both; the one with a fact is used |
+| Printed label differs from every filing label | "Total net sales", "Total cost of sales" | curated entries |
+| Instant concept inside a flow statement | beginning and ending cash looked up as one-year durations | use the concept's period type, and the prior year end for beginning balances |
+| Our own negation logic | R&D flagged `sign` although the values were equal | compare the plain value first; accept the opposite sign only for negated presentations |
+
+**Run 2,** after these fixes: 100% on both paths.
+
+### Traditional vs Docling
+
+Both paths extracted every number they found correctly. The difference is coverage: **Docling's cash-flow tables lost the first row** ("Cash, cash equivalents, and restricted cash and cash equivalents, beginning balances") in both filings, 6 numbers. Its table model merged that row into the column header (`Years ended.September 27, 2025 $ 29,943` in one header cell), so the row's numbers never became data cells. The traditional path extracted the row in both filings.
+
+<aside class="negative">
+Limits: the curated map was built by diagnosing these two filings, so a new company or year would need the same diagnosis (the automatic tiers carried 73% of numbers on their own here). The statement of shareholders' equity and the note tables are not validated.
+</aside>
 
 ## Summary and recommendations
 Duration: 0:03:00
