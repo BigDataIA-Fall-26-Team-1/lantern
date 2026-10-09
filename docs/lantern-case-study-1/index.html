@@ -26,7 +26,7 @@
                   id="lantern-case-study-1"
                   title="Project LANTERN: Parsing SEC Filings into a Traceable Corpus"
                   environment="web"
-                  feedback-link="">
+                  feedback-link="https://github.com/BigDataIA-Fall-26-Team-1/lantern/issues">
     
       <google-codelab-step label="Overview" duration="3">
         <p>FinTrust Analytics wants every number in an analyst memo to point back to a page and a bounding box in the source filing. Project LANTERN builds that corpus: it downloads two Apple (AAPL) 10-K filings (FY2024 and FY2025) from EDGAR, renders them to PDF, extracts text, tables and layout, attaches provenance, checks the numbers against the filing&#39;s own XBRL, and versions every artifact with DVC.</p>
@@ -40,7 +40,12 @@
 <p>TODO: add the architecture diagram image.</p>
 <p class="image-container"><img alt="LANTERN architecture" src="img/f2eaea242fe1e15a.png"></p>
 <h2 is-upgraded>Team</h2>
-<p>TODO: names and the Parts each member owned.</p>
+<p>Big Data Fall 2026 Team 1</p>
+<ol type="1">
+<li>Pradyumna Reddy Cherla</li>
+<li>Pranav Avinash Waghmare</li>
+<li>Preksha Praveen</li>
+</ol>
 
 
       </google-codelab-step>
@@ -254,18 +259,18 @@ ls data/parsed/AAPL_10K_20250927_p*.txt | wc -l
       <google-codelab-step label="Part 5: Metadata schema and provenance" duration="8">
         <p>The <code>export</code> stage turns the traditional path&#39;s outputs (layout blocks routed through Parts 1 and 2) into one JSONL record per block, then rebuilds each section as Markdown.</p>
 <h2 is-upgraded>The schema</h2>
-<p><code>src/schema.py</code> defines the Appendix B schema as a pydantic model. Every record is validated when it is written, so a bad field fails the stage that produced it.</p>
+<p><code>src/schema.py</code> defines the Appendix B schema as a pydantic model (<code>"schema": "lantern/1.0"</code>). Every record is validated when it is written, so a bad field fails the stage that produced it.</p>
 <table>
 <tr><td colspan="1" rowspan="1"><p>Field</p>
-</td><td colspan="1" rowspan="1"><p>Example</p>
+</td><td colspan="1" rowspan="1"><p>Example from the FY2025 10-K</p>
 </td><td colspan="1" rowspan="1"><p>Source</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><code>doc_id</code></p>
-</td><td colspan="1" rowspan="1"><p>accession number</p>
-</td><td colspan="1" rowspan="1"><p><code>manifest.csv</code></p>
+</td><td colspan="1" rowspan="1"><p><code>0000320193-25-000079</code></p>
+</td><td colspan="1" rowspan="1"><p>accession number, from <code>manifest.csv</code></p>
 </td></tr>
-<tr><td colspan="1" rowspan="1"><p><code>cik</code>, <code>ticker</code>, <code>form</code></p>
-</td><td colspan="1" rowspan="1"><p><code>0000320193</code>, <code>AAPL</code>, <code>10-K</code></p>
+<tr><td colspan="1" rowspan="1"><p><code>company</code>, <code>cik</code>, <code>ticker</code>, <code>form</code></p>
+</td><td colspan="1" rowspan="1"><p><code>Apple Inc.</code>, <code>0000320193</code>, <code>AAPL</code>, <code>10-K</code></p>
 </td><td colspan="1" rowspan="1"><p><code>manifest.csv</code></p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><code>fiscal_year</code>, <code>fiscal_period</code></p>
@@ -273,28 +278,35 @@ ls data/parsed/AAPL_10K_20250927_p*.txt | wc -l
 </td><td colspan="1" rowspan="1"><p><code>dei:DocumentFiscalYearFocus</code>, <code>dei:DocumentFiscalPeriodFocus</code></p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><code>page</code>, <code>block_id</code>, <code>block_type</code></p>
-</td><td colspan="1" rowspan="1"><p><code>45</code>, <code>p0045_b003</code>, <code>Table</code></p>
+</td><td colspan="1" rowspan="1"><p><code>1</code>, <code>p0001_b001</code>, <code>Table</code></p>
 </td><td colspan="1" rowspan="1"><p>layout stage</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><code>bbox</code>, <code>units</code>, <code>origin</code></p>
-</td><td colspan="1" rowspan="1"><p><code>[x0, top, x1, bottom]</code>, <code>pt</code>, <code>top-left</code></p>
+</td><td colspan="1" rowspan="1"><p><code>[8.38, 39.0, 555.3, 762.93]</code>, <code>pt</code>, <code>top-left</code></p>
 </td><td colspan="1" rowspan="1"><p>layout stage</p>
 </td></tr>
 <tr><td colspan="1" rowspan="1"><p><code>section</code></p>
-</td><td colspan="1" rowspan="1"><p><code>Item 7</code></p>
 </td><td colspan="1" rowspan="1"><p>Item heading, else nearest Title</p>
+</td><td colspan="1" rowspan="1"><p>export stage</p>
 </td></tr>
-<tr><td colspan="1" rowspan="1"><p><code>table</code></p>
-</td><td colspan="1" rowspan="1"><p><code>{columns, rows, raw_cells, scale}</code></p>
-</td><td colspan="1" rowspan="1"><p>tables stage</p>
+<tr><td colspan="1" rowspan="1"><p><code>text</code>, <code>table</code></p>
+</td><td colspan="1" rowspan="1"><p>block text, or <code>{columns, rows, raw_cells, scale}</code></p>
+</td><td colspan="1" rowspan="1"><p>Parts 1 and 2</p>
 </td></tr>
-<tr><td colspan="2" rowspan="1"><p><code>extractor</code>, <code>extractor_version</code>, <code>ocr</code>, <code>ocr_conf</code></p>
-</td><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>the stage that produced the text</p>
+<tr><td colspan="1" rowspan="1"><p><code>extractor</code>, <code>extractor_version</code></p>
+</td><td colspan="1" rowspan="1"><p><code>pdfplumber</code>, <code>pdfplumber 0.11.10</code></p>
+</td><td colspan="1" rowspan="1"><p>the stage that produced the text</p>
 </td></tr>
-<tr><td colspan="2" rowspan="1"><p><code>source_path</code>, <code>sha256</code></p>
-</td><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>the rendered PDF</p>
+<tr><td colspan="1" rowspan="1"><p><code>ocr</code>, <code>ocr_conf</code></p>
+</td><td colspan="1" rowspan="1"><p><code>false</code>, <code>null</code></p>
+</td><td colspan="1" rowspan="1"><p>Part 1</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>source_path</code>, <code>sha256</code></p>
+</td><td colspan="1" rowspan="1"><p><code>data/rendered/AAPL_10K_20250927.pdf</code>, file hash</p>
+</td><td colspan="1" rowspan="1"><p>the rendered PDF</p>
 </td></tr>
 </table>
+<p>Each record also carries three fields beyond Appendix B: <code>detector</code> and <code>detector_score</code> (the layout model and its confidence for the block) and <code>figure_path</code> (the crop in <code>data/figures/</code> for Figure blocks).</p>
 <h2 is-upgraded>Run it</h2>
 <pre><code language="language-bash" class="language-bash">dvc repro export
 </code></pre>
@@ -302,17 +314,43 @@ ls data/parsed/AAPL_10K_20250927_p*.txt | wc -l
 <p>One record, pretty-printed:</p>
 <pre><code language="language-bash" class="language-bash">head -n 1 data/export/AAPL_10K_20250927.jsonl | python -m json.tool
 </code></pre>
-<p>Keys are identical across documents (should print one set of keys):</p>
+<p>The first record on page 1 is a cover-page block that the layout model (<code>tf_efficientdet_d0</code>) labelled <code>Table</code> with a score of 0.254. It carries no <code>table</code> object, and its text came from pdfplumber. This is the PubLayNet domain shift the tutorial warns about: the model was trained on journal articles, not SEC cover pages.</p>
+<p>Keys are identical across all records in both filings. This prints a set with exactly one tuple of keys:</p>
 <pre><code language="language-bash" class="language-bash">python -c &#34;import json,glob; print({tuple(sorted(json.loads(l))) for f in glob.glob(&#39;data/export/*.jsonl&#39;) for l in open(f)})&#34;
 </code></pre>
-<p>Provenance in the Markdown. Every block is preceded by an HTML comment with the document, page and block id, which a reader never sees but a chunker can keep:</p>
-<pre><code language="language-bash" class="language-bash">grep -n -A1 &#34;&lt;!--&#34; data/export/AAPL_10K_20250927.md | head
+<pre><code language="language-text" class="language-text">{(&#39;bbox&#39;, &#39;block_id&#39;, &#39;block_type&#39;, &#39;cik&#39;, &#39;company&#39;, &#39;detector&#39;, &#39;detector_score&#39;, &#39;doc_id&#39;, &#39;extractor&#39;, &#39;extractor_version&#39;, &#39;figure_path&#39;, &#39;fiscal_period&#39;, &#39;fiscal_year&#39;, &#39;form&#39;, &#39;ocr&#39;, &#39;ocr_conf&#39;, &#39;origin&#39;, &#39;page&#39;, &#39;schema&#39;, &#39;section&#39;, &#39;sha256&#39;, &#39;source_path&#39;, &#39;table&#39;, &#39;text&#39;, &#39;ticker&#39;, &#39;units&#39;)}
 </code></pre>
+<p>Provenance in the Markdown. Every block is preceded by an HTML comment with the accession number, page and block id. A reader never sees it, but a chunker in Case Study 2 can keep it as metadata. Use single quotes here: in zsh, <code>!</code> inside double quotes triggers history expansion.</p>
+<pre><code language="language-bash" class="language-bash">grep -n -A1 &#39;&lt;!--&#39; data/export/AAPL_10K_20250927.md | head
+</code></pre>
+<pre><code language="language-text" class="language-text">3:&lt;!-- 0000320193-25-000079 p1 p0001_b001 --&gt;
+12:&lt;!-- 0000320193-25-000079 p1 p0001_b002 --&gt;
+66:&lt;!-- 0000320193-25-000079 p1 p0001_b003 --&gt;
+72:&lt;!-- 0000320193-25-000079 p1 p0001_b004 --&gt;
+</code></pre>
+<p class="image-container"><img alt="JSONL record" src="img/9a78a720049c6f0e.png"></p>
+<p class="image-container"><img alt="Markdown with provenance comments" src="img/b17b1b80d4559332.png"></p>
 <h2 is-upgraded>Trace one number</h2>
-<p>TODO: pick the net income line. Show the Markdown line, its comment, the matching JSONL record (page, bbox), and the highlighted box on the rendered page.</p>
-<p class="image-container"><img alt="JSONL record" src="img/f2eaea242fe1e15a.png"></p>
-<p class="image-container"><img alt="Markdown with provenance comments" src="img/f2eaea242fe1e15a.png"></p>
-<p class="image-container"><img alt="bbox highlighted on the rendered page" src="img/f2eaea242fe1e15a.png"></p>
+<p>Net income for FY2025 appears in the Markdown as a table row (values in millions, FY2025, FY2024, FY2023):</p>
+<pre><code language="language-bash" class="language-bash">grep -n -i &#39;net income&#39; data/export/AAPL_10K_20250927.md | head -5
+</code></pre>
+<pre><code language="language-text" class="language-text">2591:| Net income | 112,010 | 93,736 | 96,995 |
+</code></pre>
+<p>The nearest provenance comment above that line names the block it came from:</p>
+<pre><code language="language-bash" class="language-bash">awk &#39;NR&lt;=2591 &amp;&amp; /&lt;!--/{c=$0} NR==2591{print c; exit}&#39; data/export/AAPL_10K_20250927.md
+</code></pre>
+<pre><code language="language-text" class="language-text">&lt;!-- 0000320193-25-000079 p32 p0032_b003 --&gt;
+</code></pre>
+<p>The matching JSONL record (selected fields):</p>
+<pre><code language="language-bash" class="language-bash">python -c &#34;import json; [print(json.dumps({k:r[k] for k in (&#39;page&#39;,&#39;block_id&#39;,&#39;block_type&#39;,&#39;bbox&#39;,&#39;section&#39;,&#39;extractor&#39;)})) for r in map(json.loads, open(&#39;data/export/AAPL_10K_20250927.jsonl&#39;)) if r[&#39;block_id&#39;]==&#39;p0032_b003&#39;]&#34;
+</code></pre>
+<pre><code language="language-json" class="language-json">{&#34;page&#34;: 32, &#34;block_id&#34;: &#34;p0032_b003&#34;, &#34;block_type&#34;: &#34;Table&#34;, &#34;bbox&#34;: [3.39, 95.22, 604.84, 548.43], &#34;section&#34;: &#34;Item 8&#34;, &#34;extractor&#34;: &#34;camelot-stream&#34;}
+</code></pre>
+<p>So the number traces back to a Table block on page 32 of the rendered PDF, in Item 8 (Financial Statements), extracted with Camelot stream. The bbox covers the whole statement table, not the single row: provenance is stored per block.</p>
+<p>To draw that box on the page:</p>
+<pre><code language="language-bash" class="language-bash">python -c &#34;import pdfplumber; pdf=pdfplumber.open(&#39;data/rendered/AAPL_10K_20250927.pdf&#39;); pdf.pages[31].to_image(resolution=110).draw_rect((3.39, 95.22, 604.84, 548.43), stroke=&#39;red&#39;, stroke_width=3).save(&#39;docs/img/p5-bbox-highlight.png&#39;)&#34;
+</code></pre>
+<p class="image-container"><img alt="bbox highlighted on the rendered page" src="img/e5d582f5f8b74988.png"></p>
 
 
       </google-codelab-step>
@@ -435,9 +473,9 @@ dvc repro                 # succeeds with the fallback disabled
 </ul>
 <h2 is-upgraded>Links</h2>
 <ul>
-<li>Repository: TODO</li>
+<li>Repository: <a href="https://github.com/BigDataIA-Fall-26-Team-1/lantern" target="_blank">github.com/BigDataIA-Fall-26-Team-1/lantern</a></li>
 <li>Demo video: TODO</li>
-<li>Deployed app: TODO</li>
+<li>Deployed app: <a href="http://52.15.107.141:8501/" target="_blank">http://52.15.107.141:8501/</a></li>
 </ul>
 
 

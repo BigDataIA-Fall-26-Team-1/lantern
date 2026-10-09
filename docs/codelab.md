@@ -5,6 +5,7 @@ tags: dvc, pdf-parsing, ocr, xbrl, docling
 environments: Web
 status: Draft
 authors: BigDataIA Fall 2026 Team 1
+feedback link: https://github.com/BigDataIA-Fall-26-Team-1/lantern/issues
 
 # Project LANTERN: Parsing SEC Filings into a Traceable Corpus
 
@@ -27,7 +28,11 @@ TODO: add the architecture diagram image.
 
 ### Team
 
-TODO: names and the Parts each member owned.
+Big Data Fall 2026 Team 1
+ 1. Pradyumna Reddy Cherla
+ 2. Pranav Avinash Waghmare
+ 3. Preksha Praveen
+
 
 ## Setup and reproduction
 Duration: 0:10:00
@@ -210,19 +215,22 @@ The `export` stage turns the traditional path's outputs (layout blocks routed th
 
 ### The schema
 
-`src/schema.py` defines the Appendix B schema as a pydantic model. Every record is validated when it is written, so a bad field fails the stage that produced it.
+`src/schema.py` defines the Appendix B schema as a pydantic model (`"schema": "lantern/1.0"`). Every record is validated when it is written, so a bad field fails the stage that produced it.
 
-| Field | Example | Source |
+| Field | Example from the FY2025 10-K | Source |
 |---|---|---|
-| `doc_id` | accession number | `manifest.csv` |
-| `cik`, `ticker`, `form` | `0000320193`, `AAPL`, `10-K` | `manifest.csv` |
+| `doc_id` | `0000320193-25-000079` | accession number, from `manifest.csv` |
+| `company`, `cik`, `ticker`, `form` | `Apple Inc.`, `0000320193`, `AAPL`, `10-K` | `manifest.csv` |
 | `fiscal_year`, `fiscal_period` | `2025`, `FY` | `dei:DocumentFiscalYearFocus`, `dei:DocumentFiscalPeriodFocus` |
-| `page`, `block_id`, `block_type` | `45`, `p0045_b003`, `Table` | layout stage |
-| `bbox`, `units`, `origin` | `[x0, top, x1, bottom]`, `pt`, `top-left` | layout stage |
-| `section` | `Item 7` | Item heading, else nearest Title |
-| `table` | `{columns, rows, raw_cells, scale}` | tables stage |
-| `extractor`, `extractor_version`, `ocr`, `ocr_conf` | | the stage that produced the text |
-| `source_path`, `sha256` | | the rendered PDF |
+| `page`, `block_id`, `block_type` | `1`, `p0001_b001`, `Table` | layout stage |
+| `bbox`, `units`, `origin` | `[8.38, 39.0, 555.3, 762.93]`, `pt`, `top-left` | layout stage |
+| `section` | Item heading, else nearest Title | export stage |
+| `text`, `table` | block text, or `{columns, rows, raw_cells, scale}` | Parts 1 and 2 |
+| `extractor`, `extractor_version` | `pdfplumber`, `pdfplumber 0.11.10` | the stage that produced the text |
+| `ocr`, `ocr_conf` | `false`, `null` | Part 1 |
+| `source_path`, `sha256` | `data/rendered/AAPL_10K_20250927.pdf`, file hash | the rendered PDF |
+
+Each record also carries three fields beyond Appendix B: `detector` and `detector_score` (the layout model and its confidence for the block) and `figure_path` (the crop in `data/figures/` for Figure blocks).
 
 ### Run it
 
@@ -238,25 +246,75 @@ One record, pretty-printed:
 head -n 1 data/export/AAPL_10K_20250927.jsonl | python -m json.tool
 ```
 
-Keys are identical across documents (should print one set of keys):
+The first record on page 1 is a cover-page block that the layout model (`tf_efficientdet_d0`) labelled `Table` with a score of 0.254. It carries no `table` object, and its text came from pdfplumber. This is the PubLayNet domain shift the tutorial warns about: the model was trained on journal articles, not SEC cover pages.
+
+Keys are identical across all records in both filings. This prints a set with exactly one tuple of keys:
 
 ```bash
 python -c "import json,glob; print({tuple(sorted(json.loads(l))) for f in glob.glob('data/export/*.jsonl') for l in open(f)})"
 ```
 
-Provenance in the Markdown. Every block is preceded by an HTML comment with the document, page and block id, which a reader never sees but a chunker can keep:
-
-```bash
-grep -n -A1 "<!--" data/export/AAPL_10K_20250927.md | head
+```text
+{('bbox', 'block_id', 'block_type', 'cik', 'company', 'detector', 'detector_score', 'doc_id', 'extractor', 'extractor_version', 'figure_path', 'fiscal_period', 'fiscal_year', 'form', 'ocr', 'ocr_conf', 'origin', 'page', 'schema', 'section', 'sha256', 'source_path', 'table', 'text', 'ticker', 'units')}
 ```
 
-### Trace one number
+Provenance in the Markdown. Every block is preceded by an HTML comment with the accession number, page and block id. A reader never sees it, but a chunker in Case Study 2 can keep it as metadata. Use single quotes here: in zsh, `!` inside double quotes triggers history expansion.
 
-TODO: pick the net income line. Show the Markdown line, its comment, the matching JSONL record (page, bbox), and the highlighted box on the rendered page.
+```bash
+grep -n -A1 '<!--' data/export/AAPL_10K_20250927.md | head
+```
+
+```text
+3:<!-- 0000320193-25-000079 p1 p0001_b001 -->
+12:<!-- 0000320193-25-000079 p1 p0001_b002 -->
+66:<!-- 0000320193-25-000079 p1 p0001_b003 -->
+72:<!-- 0000320193-25-000079 p1 p0001_b004 -->
+```
 
 ![JSONL record](img/p5-jsonl-record.png)
 
 ![Markdown with provenance comments](img/p5-markdown-provenance.png)
+
+### Trace one number
+
+Net income for FY2025 appears in the Markdown as a table row (values in millions, FY2025, FY2024, FY2023):
+
+```bash
+grep -n -i 'net income' data/export/AAPL_10K_20250927.md | head -5
+```
+
+```text
+2591:| Net income | 112,010 | 93,736 | 96,995 |
+```
+
+The nearest provenance comment above that line names the block it came from:
+
+```bash
+awk 'NR<=2591 && /<!--/{c=$0} NR==2591{print c; exit}' data/export/AAPL_10K_20250927.md
+```
+
+```text
+<!-- 0000320193-25-000079 p32 p0032_b003 -->
+```
+
+The matching JSONL record (selected fields):
+
+```bash
+python -c "import json; [print(json.dumps({k:r[k] for k in ('page','block_id','block_type','bbox','section','extractor')})) for r in map(json.loads, open('data/export/AAPL_10K_20250927.jsonl')) if r['block_id']=='p0032_b003']"
+```
+
+```json
+{"page": 32, "block_id": "p0032_b003", "block_type": "Table", "bbox": [3.39, 95.22, 604.84, 548.43], "section": "Item 8", "extractor": "camelot-stream"}
+```
+
+So the number traces back to a Table block on page 32 of the rendered PDF, in Item 8 (Financial Statements), extracted with Camelot stream. The bbox covers the whole statement table, not the single row: provenance is stored per block.
+
+To draw that box on the page:
+
+```bash
+python -c "import pdfplumber; pdf=pdfplumber.open('data/rendered/AAPL_10K_20250927.pdf'); pdf.pages[31].to_image(resolution=110).draw_rect((3.39, 95.22, 604.84, 548.43), stroke='red', stroke_width=3).save('docs/img/p5-bbox-highlight.png')"
+```
+
 
 ![bbox highlighted on the rendered page](img/p5-bbox-highlight.png)
 
@@ -381,6 +439,6 @@ TODO: one short paragraph each, using numbers from the reports:
 
 ### Links
 
-- Repository: TODO
+- Repository: [github.com/BigDataIA-Fall-26-Team-1/lantern](https://github.com/BigDataIA-Fall-26-Team-1/lantern)
 - Demo video: TODO
-- Deployed app: TODO
+- Deployed app: [http://52.15.107.141:8501/](http://52.15.107.141:8501/)

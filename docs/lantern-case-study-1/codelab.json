@@ -3,7 +3,7 @@
   "format": "html",
   "prefix": "https://storage.googleapis.com",
   "mainga": "UA-49880327-14",
-  "updated": "2026-10-08T23:15:00-04:00",
+  "updated": "2026-10-08T23:54:23-04:00",
   "id": "lantern-case-study-1",
   "duration": 85,
   "title": "Project LANTERN: Parsing SEC Filings into a Traceable Corpus",
@@ -25,5 +25,6 @@
     "web",
     "xbrl"
   ],
+  "feedback": "https://github.com/BigDataIA-Fall-26-Team-1/lantern/issues",
   "url": "lantern-case-study-1"
 }
