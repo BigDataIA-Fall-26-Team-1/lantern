@@ -1,0 +1,8 @@
+fastapi==0.143.0
+uvicorn==0.54.0
+streamlit==1.65.0
+requests==2.34.2
+pandas==3.0.6
+pdfplumber==0.11.10
+dvc==3.67.1
+dvc-s3==3.3.0

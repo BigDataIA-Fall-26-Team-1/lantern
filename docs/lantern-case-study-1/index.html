@@ -1,0 +1,1550 @@
+
+<!doctype html>
+
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1.0, user-scalable=yes">
+  <meta name="theme-color" content="#4F7DC9">
+  <meta charset="UTF-8">
+  <title>Project lantern: Parsing SEC Filings into a Traceable Corpus</title>
+  <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Source+Code+Pro:400|Roboto:400,300,400italic,500,700|Roboto+Mono">
+  <link rel="stylesheet" href="//fonts.googleapis.com/icon?family=Material+Icons">
+  <link rel="stylesheet" href="https://storage.googleapis.com/claat-public/codelab-elements.css">
+  <style>
+    .success {
+      color: #1e8e3e;
+    }
+    .error {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <google-codelab-analytics gaid="UA-49880327-14" ga4id=""></google-codelab-analytics>
+  <google-codelab codelab-gaid=""
+                  codelab-ga4id=""
+                  id="lantern-case-study-1"
+                  title="Project lantern: Parsing SEC Filings into a Traceable Corpus"
+                  environment="web"
+                  feedback-link="https://github.com/BigDataIA-Fall-26-Team-1/lantern/issues">
+    
+      <google-codelab-step label="Overview" duration="4">
+        <p><strong>Project LANTERN turns SEC 10-K filings into a corpus where every sentence and every number can be traced back to a page and a bounding box in the source, and every financial figure is checked against the filing&#39;s own XBRL.</strong></p>
+<p>FinTrust Analytics&#39; analysts download filings by hand and cannot say where a number in a memo came from. LANTERN automates the whole path: it downloads two Apple (AAPL) 10-K filings (FY2024 and FY2025) from SEC EDGAR, renders them to PDF, extracts text, tables and layout with three independent methods, validates the numbers against XBRL, evaluates quality against a hand-typed answer key, and versions every artifact with DVC, so the corpus rebuilds from one command.</p>
+<h2 is-upgraded>Results at a glance</h2>
+<table>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>Result</p>
+</td><td colspan="1" rowspan="1"><p>Step</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Corpus</strong></p>
+</td><td colspan="1" rowspan="1"><p>2 filings, 121 pages, 1,705 validated records, each with a page and a bounding box</p>
+</td><td colspan="1" rowspan="1"><p>Parts 0, 5</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Text accuracy</strong></p>
+</td><td colspan="1" rowspan="1"><p>1.67% word error rate (pdfplumber) on 16 hand-typed pages</p>
+</td><td colspan="1" rowspan="1"><p>Part 9</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Table accuracy</strong></p>
+</td><td colspan="1" rowspan="1"><p>cell F1 of 1.0 on 111 cells keyed by two people independently (agreement 0.991)</p>
+</td><td colspan="1" rowspan="1"><p>Part 9</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Validated against XBRL</strong></p>
+</td><td colspan="1" rowspan="1"><p>456 of 456 statement numbers match the filing&#39;s own XBRL (100%)</p>
+</td><td colspan="1" rowspan="1"><p>Part 11</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Build vs buy</strong></p>
+</td><td colspan="1" rowspan="1"><p>open source about $6 a year in compute vs about $4,540 a year for AWS Textract, at 5,000 filings</p>
+</td><td colspan="1" rowspan="1"><p>Parts 7, 10</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Reproducible</strong></p>
+</td><td colspan="1" rowspan="1"><p>a fresh clone rebuilds everything with <code>dvc pull</code>; <code>dvc repro</code> skips all 9 stages; 65 tests pass</p>
+</td><td colspan="1" rowspan="1"><p>Part 8</p>
+</td></tr>
+</table>
+<h2 is-upgraded>What Project Lantern does</h2>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Component</p>
+</td><td colspan="1" rowspan="1"><p>How it works</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Ingest</strong> (Part 0)</p>
+</td><td colspan="1" rowspan="1"><p>Downloads the two 10-Ks pinned in <code>params.yaml</code> with <code>sec-edgar-downloader</code>, unpacks the iXBRL files, and renders each filing to PDF with Playwright (60 and 61 pages).</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Text</strong> (Part 1)</p>
+</td><td colspan="1" rowspan="1"><p>Reads every page&#39;s text and word boxes with pdfplumber. A three-signal trigger sends image-only pages to Tesseract OCR: none of the 121 filing pages needed it, and the scanned test fixture came back at 95.4–95.7 confidence.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Tables</strong> (Part 2)</p>
+</td><td colspan="1" rowspan="1"><p>A hybrid extractor picks the best Camelot method per page (stream for the income statement, network for the balance sheet) and normalizes every number: negatives in parentheses, the &#34;in millions&#34; scale, unscaled per-share rows.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Layout</strong> (Part 3)</p>
+</td><td colspan="1" rowspan="1"><p>LayoutParser finds the blocks on each page and routes each one to the right extractor; a fallback keeps every word the model misses.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Docling</strong> (Part 4)</p>
+</td><td colspan="1" rowspan="1"><p>A second, independent parsing path, used to compare and as a fallback for layouts the traditional path handles badly.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Corpus</strong> (Parts 5–6)</p>
+</td><td colspan="1" rowspan="1"><p>1,705 records, each validated by a pydantic schema and carrying its page and bounding box. JSONL is the source of truth; section Markdown, with a provenance comment before every block, feeds retrieval.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Build vs buy</strong> (Part 7)</p>
+</td><td colspan="1" rowspan="1"><p>AWS Textract runs as an optional, cached fallback, off by default, so the pipeline needs no cloud credentials.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Pipeline</strong> (Part 8)</p>
+</td><td colspan="1" rowspan="1"><p>Nine DVC stages with every output hash in <code>dvc.lock</code>, data on a public-read S3 remote, and a CI smoke test on every pull request.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Evaluation</strong> (Part 9)</p>
+</td><td colspan="1" rowspan="1"><p>Scores every path against 18 hand-typed pages and two double-keyed statements, with regression tests that fail when a parser breaks.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Benchmarks</strong> (Part 10)</p>
+</td><td colspan="1" rowspan="1"><p>Times every stage per page and turns that into a yearly cost, open source vs managed.</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>XBRL validation</strong> (Part 11)</p>
+</td><td colspan="1" rowspan="1"><p>Loads the filings&#39; own XBRL with Arelle, maps each table row to its concept, and checks every number.</p>
+</td></tr>
+</table>
+<h2 is-upgraded>Team</h2>
+<p><strong>Big Data and Intelligent Analytics (DAMG 7245), Fall 2026 · Team 1</strong></p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Team member</p>
+</td><td colspan="1" rowspan="1"><p>Parts</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Pradyumna Reddy Cherla</strong></p>
+</td><td colspan="1" rowspan="1"><p>Part 2 (tables), Part 3 (layout), Part 9 (evaluation), Part 11 (XBRL validation)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Pranav Avinash Waghmare</strong></p>
+</td><td colspan="1" rowspan="1"><p>Part 0 (download and render), Part 4 (Docling), Part 8 (pipeline), Part 10 (benchmarks)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Preksha Praveen</strong></p>
+</td><td colspan="1" rowspan="1"><p>Part 1 (text and OCR), Part 5 (schema and provenance), Part 6 (formats), Part 7 (build vs buy), DVC remote on S3</p>
+</td></tr>
+</table>
+<h2 is-upgraded>Links</h2>
+<ul>
+<li><strong>Repository: </strong><a href="https://github.com/BigDataIA-Fall-26-Team-1/lantern" target="_blank">github.com/BigDataIA-Fall-26-Team-1/lantern</a></li>
+<li><strong>Deployed app: </strong><a href="http://52.15.107.141:8501/" target="_blank">http://52.15.107.141:8501/</a></li>
+<li><strong>Demo video:</strong> TODO</li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Architecture" duration="3">
+        <p>Every stage reads one folder and writes the next, and every folder is versioned with DVC.</p>
+<p class="image-container"><img alt="Project Lantern Architecture" src="img/e27b98612b909f64.png"></p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Layer</p>
+</td><td colspan="1" rowspan="1"><p>Stages</p>
+</td><td colspan="1" rowspan="1"><p>What it produces</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Ingest</p>
+</td><td colspan="1" rowspan="1"><p><code>download</code>, <code>render</code></p>
+</td><td colspan="1" rowspan="1"><p>the filings&#39; iXBRL HTML (<code>data/raw</code>) and rendered PDFs (<code>data/rendered</code>)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Parse</p>
+</td><td colspan="1" rowspan="1"><p><code>parse_pdfplumber</code>, <code>tables</code>, <code>layout</code>, <code>parse_docling</code></p>
+</td><td colspan="1" rowspan="1"><p>text and word boxes, tables, layout blocks, and Docling&#39;s alternative reading</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Managed fallback</p>
+</td><td colspan="1" rowspan="1"><p>(optional, off by default)</p>
+</td><td colspan="1" rowspan="1"><p>cached AWS Textract responses (<code>data/managed</code>)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Represent</p>
+</td><td colspan="1" rowspan="1"><p><code>export</code></p>
+</td><td colspan="1" rowspan="1"><p>validated JSONL, section Markdown and TXT (<code>data/export</code>)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Validate and evaluate</p>
+</td><td colspan="1" rowspan="1"><p><code>xbrl</code>, <code>evaluate</code></p>
+</td><td colspan="1" rowspan="1"><p>XBRL match rates (<code>data/xbrl</code>) and quality metrics (<code>reports/metrics.json</code>)</p>
+</td></tr>
+</table>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Setup and reproduction" duration="10">
+        <p>This rebuilds the whole corpus from our DVC remote. No AWS or other cloud credentials are needed: the data is publicly readable, and the managed service (Part 7) is off by default.</p>
+<h2 is-upgraded>Prerequisites</h2>
+<ul>
+<li>Python 3.11</li>
+<li>System packages: Tesseract, Poppler (and Ghostscript if Camelot asks for it)</li>
+<li>Chromium for Playwright (only needed if you re-run the <code>render</code> stage)</li>
+</ul>
+<p>macOS:</p>
+<pre><code language="language-bash" class="language-bash">brew install tesseract poppler
+</code></pre>
+<p>Ubuntu / WSL:</p>
+<pre><code language="language-bash" class="language-bash">sudo apt-get install -y tesseract-ocr poppler-utils
+</code></pre>
+<h2 is-upgraded>Reproduce the corpus</h2>
+<p>These are the exact commands from the brief&#39;s reproducibility contract:</p>
+<pre><code language="language-bash" class="language-bash">git clone https://github.com/BigDataIA-Fall-26-Team-1/lantern.git lantern &amp;&amp; cd lantern
+git checkout submission
+python -m venv .venv &amp;&amp; source .venv/bin/activate
+pip install -r requirements.txt
+dvc pull
+dvc repro
+dvc metrics show
+pytest -q
+</code></pre>
+<h2 is-upgraded>What you should see</h2>
+<ul>
+<li><code>dvc pull</code> downloads every data folder from the read-only S3 remote: <code>data/raw</code>, <code>data/rendered</code>, <code>data/parsed</code>, <code>data/tables</code>, <code>data/layout</code>, <code>data/figures</code>, <code>data/docling</code>, <code>data/export</code>, <code>data/managed</code>, <code>data/ground_truth</code>, <code>data/xbrl</code> and <code>data/bench</code>.</li>
+<li><code>dvc repro</code> reports every stage as unchanged and skips it, because every output already matches <code>dvc.lock</code>. That is what reproducibility looks like.</li>
+<li><code>dvc metrics show</code> prints the evaluation metrics from <code>reports/metrics.json</code> (Part 9).</li>
+<li><code>pytest -q</code> passes every test.</li>
+</ul>
+<aside class="special"><p> The managed service stays off: <code>managed.enabled: false</code> in <code>params.yaml</code>. The pipeline only reads its cached responses, so no cloud account is needed. </p>
+</aside>
+<p class="image-container"><img alt="dvc repro skipping stages" src="img/7e8d371c20af806c.png"></p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 0: Download and render" duration="5">
+        <p>Two stages turn EDGAR filings into the PDFs every later stage reads.</p>
+<h2 is-upgraded>Download</h2>
+<p><code>src/download.py</code> uses <code>sec-edgar-downloader</code> with <code>download_details=True</code>. Which filings to fetch is pinned in <code>params.yaml</code>, so the corpus never depends on &#34;the latest&#34; filings:</p>
+<pre><code language="language-yaml" class="language-yaml">download:
+  ticker: AAPL
+  forms: [&#34;10-K&#34;]
+  after: &#34;2024-01-01&#34;
+  before: &#34;2026-01-01&#34;
+</code></pre>
+<p>Every request declares the team&#39;s User-Agent (name and Northeastern email, also from <code>params.yaml</code>). Each filing&#39;s <code>full-submission.txt</code> is unpacked into an <code>unpacked/</code> folder with the original file names: the iXBRL <code>.htm</code>, the <code>.xsd</code> and the linkbases, which Part 11 needs to load the filing in Arelle.</p>
+<h2 is-upgraded>Render</h2>
+<p>EDGAR&#39;s official documents are Inline XBRL HTML, not PDFs, so <code>src/render.py</code> renders each filing&#39;s HTML with Playwright (headless Chromium, Letter size) to <code>data/rendered/{TICKER}_{FORM}_{PERIOD}.pdf</code>. <code>PERIOD</code> comes from the <code>CONFORMED PERIOD OF REPORT</code> header line, and the CIK from <code>CENTRAL INDEX KEY</code>. The stage also writes <code>data/rendered/manifest.csv</code> (stem, accession, cik, ticker, form, period, source file), which lets every later stage translate a file name into an accession number.</p>
+<aside class="warning"><p> Fonts and the browser engine move page breaks, and page breaks decide every page number downstream. The PDFs were therefore rendered once, on one machine, and everyone else gets them with <code>dvc pull</code>. Re-rendering elsewhere would shift pages. </p>
+</aside>
+<h2 is-upgraded>Run it</h2>
+<pre><code language="language-bash" class="language-bash">dvc repro download render
+</code></pre>
+<p>After a <code>dvc pull</code>, both stages are skipped. To inspect the results:</p>
+<pre><code language="language-bash" class="language-bash">du -sh data/raw
+cat data/rendered/manifest.csv
+pdfinfo data/rendered/AAPL_10K_20250927.pdf | grep Pages
+</code></pre>
+<h2 is-upgraded>Results</h2>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Filing</p>
+</td><td colspan="1" rowspan="1"><p>Accession</p>
+</td><td colspan="1" rowspan="1"><p>Rendered PDF</p>
+</td><td colspan="1" rowspan="1"><p>Pages</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>FY2024 10-K</p>
+</td><td colspan="1" rowspan="1"><p>0000320193-24-000123</p>
+</td><td colspan="1" rowspan="1"><p><code>AAPL_10K_20240928.pdf</code></p>
+</td><td colspan="1" rowspan="1"><p>60</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>FY2025 10-K</p>
+</td><td colspan="1" rowspan="1"><p>0000320193-25-000079</p>
+</td><td colspan="1" rowspan="1"><p><code>AAPL_10K_20250927.pdf</code></p>
+</td><td colspan="1" rowspan="1"><p>61</p>
+</td></tr>
+</table>
+<p><code>data/raw</code> is 37.3 MB (181 files), under the brief&#39;s 100 MB limit.</p>
+<h2 is-upgraded>Test fixtures</h2>
+<p>Three small PDFs are committed to Git in <code>tests/fixtures/</code> (not DVC), because CI has no access to the DVC remote:</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Fixture</p>
+</td><td colspan="1" rowspan="1"><p>What it is</p>
+</td><td colspan="1" rowspan="1"><p>Used to test</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>statement.pdf</code></p>
+</td><td colspan="1" rowspan="1"><p>FY2025 PDF page 32, the income statement</p>
+</td><td colspan="1" rowspan="1"><p>table extraction</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>scanned.pdf</code></p>
+</td><td colspan="1" rowspan="1"><p>FY2025 pages 5–7 rasterized at 300 DPI (<code>pdftoppm</code>) and rebuilt as an image-only PDF (<code>img2pdf</code>)</p>
+</td><td colspan="1" rowspan="1"><p>the OCR path</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>multicol.pdf</code></p>
+</td><td colspan="1" rowspan="1"><p>JPMorgan Chase 10-K (accession 0000019617-25-000270), PDF page 10: Apple&#39;s filings have no multi-column page</p>
+</td><td colspan="1" rowspan="1"><p>reading order</p>
+</td></tr>
+</table>
+<p>Their sources are documented in <code>tests/fixtures/README.md</code>.</p>
+<p class="image-container"><img alt="manifest.csv" src="img/f8643c751bc348fe.png"></p>
+<p class="image-container"><img alt="A rendered page" src="img/18b628259c6b996.png"></p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 1: Text extraction with OCR fallback" duration="8">
+        <p>The <code>parse_pdfplumber</code> stage reads every rendered PDF page by page. For each page it saves the text, saves every word with its bounding box, and decides whether the page needs OCR.</p>
+<h2 is-upgraded>What the stage writes</h2>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Output</p>
+</td><td colspan="1" rowspan="1"><p>Contents</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>data/parsed/{stem}_p{NNNN}.txt</code></p>
+</td><td colspan="1" rowspan="1"><p>Text of one page</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>data/parsed/{stem}.words.jsonl</code></p>
+</td><td colspan="1" rowspan="1"><p>One word per line with <code>bbox</code> in PDF points, top-left origin</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>data/parsed/ocr_log.csv</code></p>
+</td><td colspan="1" rowspan="1"><p>One row per page: document, page, triggered, reason, engine, mean confidence, and the three signal values</p>
+</td></tr>
+</table>
+<h2 is-upgraded>The OCR trigger</h2>
+<p>The trigger checks three signals on every page: the character count, the share of junk tokens such as <code>(cid:NN)</code>, and how much of the page is covered by images. The <code>reason</code> column in the log records which signals fired. All thresholds, the OCR resolution and the Tesseract settings live in <code>params.yaml</code>:</p>
+<pre><code language="language-yaml" class="language-yaml">ocr:
+  min_chars: 50
+  junk_ratio: 0.3
+  dpi: 300
+  image_coverage: 0.6
+  tesseract_config: &#34;--oem 1 --psm 6&#34;
+</code></pre>
+<p>Tesseract returns boxes in pixels. The stage converts them back to points (<code>pt = px * 72 / dpi</code>) so OCR words and pdfplumber words use the same coordinates.</p>
+<h2 is-upgraded>Run it</h2>
+<p>On the full corpus:</p>
+<pre><code language="language-bash" class="language-bash">dvc repro parse_pdfplumber
+</code></pre>
+<p>On the committed fixtures only (the same command CI runs):</p>
+<pre><code language="language-bash" class="language-bash">python src/parse_text.py --input tests/fixtures --output /tmp/parsed_fixtures
+</code></pre>
+<h2 is-upgraded>Check the results</h2>
+<p>Every page has a <code>.txt</code> file:</p>
+<pre><code language="language-bash" class="language-bash">pdfinfo data/rendered/AAPL_10K_20250927.pdf | grep Pages
+ls data/parsed/AAPL_10K_20250927_p*.txt | wc -l
+</code></pre>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Filing</p>
+</td><td colspan="1" rowspan="1"><p>PDF pages</p>
+</td><td colspan="1" rowspan="1"><p><code>.txt</code> files</p>
+</td><td colspan="1" rowspan="1"><p>Pages sent to OCR</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>AAPL_10K_20250927</p>
+</td><td colspan="1" rowspan="1"><p>61</p>
+</td><td colspan="1" rowspan="1"><p>61</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>AAPL_10K_20240928</p>
+</td><td colspan="1" rowspan="1"><p>60</p>
+</td><td colspan="1" rowspan="1"><p>60</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td></tr>
+</table>
+<p>A word record from <code>words.jsonl</code>:</p>
+<pre><code language="language-json" class="language-json">{&#34;doc_id&#34;: &#34;0000320193-25-000079&#34;, &#34;stem&#34;: &#34;AAPL_10K_20250927&#34;, &#34;page&#34;: 1, &#34;text&#34;: &#34;UNITED&#34;, &#34;bbox&#34;: [255.33, 67.76, 303.71, 80.75], &#34;units&#34;: &#34;pt&#34;, &#34;origin&#34;: &#34;top-left&#34;, &#34;source&#34;: &#34;pdfplumber&#34;, &#34;ocr&#34;: false, &#34;conf&#34;: null}
+</code></pre>
+<p>The OCR log for the fixtures (the <code>sed</code> fills empty cells so <code>column</code> keeps them aligned):</p>
+<pre><code language="language-bash" class="language-bash">sed &#39;s/,,/,-,/g&#39; /tmp/parsed_fixtures/ocr_log.csv | column -s, -t
+</code></pre>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Fixture</p>
+</td><td colspan="1" rowspan="1"><p>Page</p>
+</td><td colspan="1" rowspan="1"><p>Triggered</p>
+</td><td colspan="1" rowspan="1"><p>Reason</p>
+</td><td colspan="1" rowspan="1"><p>Engine</p>
+</td><td colspan="1" rowspan="1"><p>Mean conf</p>
+</td><td colspan="1" rowspan="1"><p>Text chars</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>scanned</p>
+</td><td colspan="1" rowspan="1"><p>1</p>
+</td><td colspan="1" rowspan="1"><p>True</p>
+</td><td colspan="1" rowspan="1"><p>low_chars; image_coverage</p>
+</td><td colspan="1" rowspan="1"><p>tesseract</p>
+</td><td colspan="1" rowspan="1"><p>95.4</p>
+</td><td colspan="1" rowspan="1"><p>3,808</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>scanned</p>
+</td><td colspan="1" rowspan="1"><p>2</p>
+</td><td colspan="1" rowspan="1"><p>True</p>
+</td><td colspan="1" rowspan="1"><p>low_chars; image_coverage</p>
+</td><td colspan="1" rowspan="1"><p>tesseract</p>
+</td><td colspan="1" rowspan="1"><p>95.7</p>
+</td><td colspan="1" rowspan="1"><p>6,108</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>scanned</p>
+</td><td colspan="1" rowspan="1"><p>3</p>
+</td><td colspan="1" rowspan="1"><p>True</p>
+</td><td colspan="1" rowspan="1"><p>low_chars; image_coverage</p>
+</td><td colspan="1" rowspan="1"><p>tesseract</p>
+</td><td colspan="1" rowspan="1"><p>95.5</p>
+</td><td colspan="1" rowspan="1"><p>4,565</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>statement</p>
+</td><td colspan="1" rowspan="1"><p>1</p>
+</td><td colspan="1" rowspan="1"><p>False</p>
+</td><td colspan="1" rowspan="1"><p>none</p>
+</td><td colspan="1" rowspan="1"><p>pdfplumber</p>
+</td><td colspan="1" rowspan="1"><p>n/a</p>
+</td><td colspan="1" rowspan="1"><p>1,194</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>multicol</p>
+</td><td colspan="1" rowspan="1"><p>1</p>
+</td><td colspan="1" rowspan="1"><p>False</p>
+</td><td colspan="1" rowspan="1"><p>none</p>
+</td><td colspan="1" rowspan="1"><p>pdfplumber</p>
+</td><td colspan="1" rowspan="1"><p>n/a</p>
+</td><td colspan="1" rowspan="1"><p>3,846</p>
+</td></tr>
+</table>
+<p>The scanned fixture has no text layer (0 characters, full-page image), so every page goes to Tesseract and comes back with non-empty text. The born-digital fixtures and all 121 pages of the two filings stay on pdfplumber.</p>
+<p class="image-container"><img alt="OCR log for the fixtures" src="img/af2fbd8573df2fe0.png"></p>
+<p class="image-container"><img alt="Scanned fixture page and its OCR text" src="img/5b018ebaaf381b60.png"></p>
+<aside class="special"><p> Rendered EDGAR PDFs almost never need OCR, so the scanned fixture is the only real test of the OCR path. That is why it is committed to Git and run in CI. </p>
+</aside>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 2: Tables and the hybrid extractor" duration="8">
+        <p>The <code>tables</code> stage finds the financial statements in each filing, extracts them with the best method for each page, and normalizes every number.</p>
+<h2 is-upgraded>Finding the statement pages</h2>
+<p>A page counts as a statement page when a statement title is (nearly) a whole line near the top of the page and the page has enough numbers. Two problems on the real filings were fixed: the Item 15 exhibit index was a false positive (fixed by limiting extra characters on the title line), and the short comprehensive income statement was missed (fixed by lowering the minimum number count to 20). The result is exactly pages 32 to 36 in both filings, with no false positives.</p>
+<h2 is-upgraded>The bake-off</h2>
+<p>Five methods on two statement pages, with 10 cells per method checked by hand against the page image:</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Method</p>
+</td><td colspan="1" rowspan="1"><p>Income statement (p32)</p>
+</td><td colspan="1" rowspan="1"><p>Balance sheet (p34)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Camelot lattice</p>
+</td><td colspan="1" rowspan="1"><p>0/10</p>
+</td><td colspan="1" rowspan="1"><p>0/10</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Camelot stream</p>
+</td><td colspan="1" rowspan="1"><p><strong>10/10</strong></p>
+</td><td colspan="1" rowspan="1"><p>5/10 (stopped at &#34;Total assets&#34;)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Camelot network</p>
+</td><td colspan="1" rowspan="1"><p>0/10 (dropped every row label)</p>
+</td><td colspan="1" rowspan="1"><p><strong>10/10</strong></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Camelot hybrid</p>
+</td><td colspan="1" rowspan="1"><p>0/10</p>
+</td><td colspan="1" rowspan="1"><p>0/10</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>pdfplumber text</p>
+</td><td colspan="1" rowspan="1"><p>9/10 (dropped a closing parenthesis)</p>
+</td><td colspan="1" rowspan="1"><p>10/10 (but split labels mid-word)</p>
+</td></tr>
+</table>
+<p>Two findings drive the design:</p>
+<ol type="1">
+<li><strong>Camelot&#39;s accuracy score ranks the methods almost backwards.</strong> Lattice and hybrid scored 100 on both pages yet got 0/10: accuracy measures how cleanly text fits into cells, not whether the structure is right.</li>
+<li><strong>No single method wins every statement.</strong> Stream wins the income statement, network wins the balance sheet.</li>
+</ol>
+<h2 is-upgraded>The hybrid extractor</h2>
+<p><code>src/tables.py</code> decides per page, with every threshold in <code>params.yaml</code> under <code>tables</code>:</p>
+<ol type="1">
+<li><strong>Clean</strong> the table: drop empty rows and columns and <code>$</code>-only columns, and join labels that wrap onto a second line.</li>
+<li><strong>Choose an order:</strong> ruled pages try lattice first; borderless pages (all of Apple&#39;s statements) try stream first.</li>
+<li><strong>Check the structure:</strong> minimum size, coverage of the page&#39;s numbers, and no values merged into the label column.</li>
+<li><strong>Score</strong> each valid table (<code>accuracy − whitespace_weight × whitespace</code>) and accept the first one at or above <code>accept_score</code> (80); otherwise keep the best valid table as <code>best_below_threshold</code>.</li>
+</ol>
+<p>Every decision is logged in <code>tables_log.csv</code>. On the balance sheet, stream is tried first and rejected (coverage 40%), then network is accepted (score 87.95).</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Page</p>
+</td><td colspan="1" rowspan="1"><p>Statement</p>
+</td><td colspan="1" rowspan="1"><p>Method chosen</p>
+</td><td colspan="1" rowspan="1"><p>Shape</p>
+</td><td colspan="1" rowspan="1"><p>Score</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>32</p>
+</td><td colspan="1" rowspan="1"><p>Income</p>
+</td><td colspan="1" rowspan="1"><p>stream</p>
+</td><td colspan="1" rowspan="1"><p>27×4</p>
+</td><td colspan="1" rowspan="1"><p>90.38</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>33</p>
+</td><td colspan="1" rowspan="1"><p>Comprehensive income</p>
+</td><td colspan="1" rowspan="1"><p>stream</p>
+</td><td colspan="1" rowspan="1"><p>16×4</p>
+</td><td colspan="1" rowspan="1"><p>87.21</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>34</p>
+</td><td colspan="1" rowspan="1"><p>Balance sheet</p>
+</td><td colspan="1" rowspan="1"><p>network</p>
+</td><td colspan="1" rowspan="1"><p>39×3</p>
+</td><td colspan="1" rowspan="1"><p>87.95</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>35</p>
+</td><td colspan="1" rowspan="1"><p>Shareholders&#39; equity</p>
+</td><td colspan="1" rowspan="1"><p>stream</p>
+</td><td colspan="1" rowspan="1"><p>23×4</p>
+</td><td colspan="1" rowspan="1"><p>91.36</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>36</p>
+</td><td colspan="1" rowspan="1"><p>Cash flows</p>
+</td><td colspan="1" rowspan="1"><p>stream</p>
+</td><td colspan="1" rowspan="1"><p>38×4</p>
+</td><td colspan="1" rowspan="1"><p>91.88</p>
+</td></tr>
+</table>
+<h2 is-upgraded>Normalization</h2>
+<p>Raw and normalized grids are stored side by side (<code>.raw.csv</code> and <code>.norm.csv</code> in <code>data/tables/</code>):</p>
+<ul>
+<li><code>(1,234)</code> becomes −1,234; dashes become 0; <code>$</code>, commas and trailing footnote markers are stripped.</li>
+<li>The scale comes from the caption. For Apple, money rows are × 1,000,000, share counts × 1,000, and per-share amounts stay unscaled.</li>
+<li>Each row is tagged <code>header</code>, <code>money</code>, <code>shares</code> or <code>per_share</code>.</li>
+</ul>
+<p>Checked on the income statement: net income 112,010 becomes 112,010,000,000; (321) becomes −321,000,000; diluted EPS stays 7.46. On the balance sheet, total liabilities 285,508 plus total shareholders&#39; equity 73,733 equals total assets 359,241. 25 unit tests in <code>tests/test_tables_normalize.py</code> cover the rules.</p>
+<h2 is-upgraded>Run it</h2>
+<pre><code language="language-bash" class="language-bash">dvc repro tables
+python src/tables.py --input tests/fixtures --output /tmp/tables_fixture
+</code></pre>
+<p>The full bake-off, the 20 hand-checked cells and the reasoning are in <code>reports/tables_method.md</code>.</p>
+<p class="image-container"><img alt="Income statement CSV next to the PDF page" src="img/b969faf4309b46e5.png"></p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 3: Layout detection and routing" duration="6">
+        <p>The <code>layout</code> stage finds the blocks on every page with a learned layout model, then sends each block to the right extractor.</p>
+<h2 is-upgraded>The model</h2>
+<p>LayoutParser EfficientDet (<code>tf_efficientdet_d0</code>, trained on PubLayNet), with pages rendered at 150 DPI and boxes converted to PDF points with a top-left origin. The score threshold is 0.25: at 0.5, almost nothing was kept, since most correct blocks scored 0.28 to 0.45.</p>
+<h2 is-upgraded>Routing</h2>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Block type</p>
+</td><td colspan="1" rowspan="1"><p>Sent to</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Text, Title, List</p>
+</td><td colspan="1" rowspan="1"><p>pdfplumber within the block&#39;s box (OCR if empty)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Table</p>
+</td><td colspan="1" rowspan="1"><p>Part 2&#39;s extractor, limited to the block&#39;s padded region</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Figure</p>
+</td><td colspan="1" rowspan="1"><p>cropped to <code>data/figures/</code></p>
+</td></tr>
+</table>
+<p>Blocks are put in reading order (by column, then top to bottom), and each Text block is attached to the nearest preceding Title as its section. Output: <code>data/layout/{stem}.blocks.jsonl</code>.</p>
+<p>Routing helps tables directly: on the balance sheet, Camelot stream on the full page stopped at &#34;Total assets&#34; (coverage 40%), but stream limited to the layout region returned the whole statement (37×3, coverage 90%).</p>
+<h2 is-upgraded>Audit on 10 pages</h2>
+<p>Ten FY2025 pages covering every page type (cover, table of contents, prose, MD&amp;A, statements, notes, auditor&#39;s report) were checked element by element:</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Class</p>
+</td><td colspan="1" rowspan="1"><p>Elements</p>
+</td><td colspan="1" rowspan="1"><p>Correct</p>
+</td><td colspan="1" rowspan="1"><p>Partial</p>
+</td><td colspan="1" rowspan="1"><p>Missed</p>
+</td><td colspan="1" rowspan="1"><p>Wrong type</p>
+</td><td colspan="1" rowspan="1"><p>Detected</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Text</p>
+</td><td colspan="1" rowspan="1"><p>60</p>
+</td><td colspan="1" rowspan="1"><p>26</p>
+</td><td colspan="1" rowspan="1"><p>5</p>
+</td><td colspan="1" rowspan="1"><p>28</p>
+</td><td colspan="1" rowspan="1"><p>1</p>
+</td><td colspan="1" rowspan="1"><p>52%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Title</p>
+</td><td colspan="1" rowspan="1"><p>38</p>
+</td><td colspan="1" rowspan="1"><p>26</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td><td colspan="1" rowspan="1"><p>11</p>
+</td><td colspan="1" rowspan="1"><p>1</p>
+</td><td colspan="1" rowspan="1"><p>68%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>List</p>
+</td><td colspan="1" rowspan="1"><p>4</p>
+</td><td colspan="1" rowspan="1"><p>2</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td><td colspan="1" rowspan="1"><p>2</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td><td colspan="1" rowspan="1"><p>50%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Table</p>
+</td><td colspan="1" rowspan="1"><p>8</p>
+</td><td colspan="1" rowspan="1"><p>5</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td><td colspan="1" rowspan="1"><p>3</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td><td colspan="1" rowspan="1"><p>63%</p>
+</td></tr>
+</table>
+<p>PubLayNet was trained on journal articles, not SEC filings, and it shows: it finds the statements reliably but misses about half the body text. The stage handles that rather than losing text:</p>
+<ul>
+<li><strong>Missed text:</strong> words in no block become <code>fallback</code> Text blocks, so no text is lost.</li>
+<li><strong>Clipped boxes:</strong> words near a box&#39;s edge snap into it (40 pt for tables, 15 pt for text). This removed about 30% of fallback blocks, the one- or two-word fragments that broke sentences.</li>
+<li><strong>Duplicates and false tables:</strong> boxes mostly covered by better boxes are dropped, and a Camelot result must lie inside the requested region.</li>
+</ul>
+<h2 is-upgraded>Full run</h2>
+<table>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>FY2024</p>
+</td><td colspan="1" rowspan="1"><p>FY2025</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Blocks (after cleanup)</p>
+</td><td colspan="1" rowspan="1"><p>871</p>
+</td><td colspan="1" rowspan="1"><p>834</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Tables detected by the model</p>
+</td><td colspan="1" rowspan="1"><p>29</p>
+</td><td colspan="1" rowspan="1"><p>31</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Tables extracted (accepted or best below threshold)</p>
+</td><td colspan="1" rowspan="1"><p>23</p>
+</td><td colspan="1" rowspan="1"><p>24</p>
+</td></tr>
+</table>
+<h2 is-upgraded>Run it</h2>
+<pre><code language="language-bash" class="language-bash">dvc repro layout
+</code></pre>
+<p>QA overlays for the audited pages, in both filings, are in <code>reports/layout/</code>; the per-page audit is in <code>reports/layout_audit.md</code>.</p>
+<p><strong>Where it works:</strong> on the FY2025 income statement (page 32), one tight Table box covers the whole statement, so Camelot gets exactly the right region. Only the statement title above it is missed.</p>
+<p class="image-container"><img alt="Layout overlay, FY2025 income statement (page 32)" src="img/7895dedee77465e8.png"></p>
+<p><strong>Where it fails:</strong> on the FY2025 cover page (page 1), the model draws a page-wide Table box (score 0.25) and a page-wide Figure box (score 0.38), and labels the Nasdaq column a List. This is PubLayNet&#39;s domain shift: it was trained on journal articles, not SEC cover pages. No text is lost, though: the cover&#39;s words still reach the corpus through the fallback blocks.</p>
+<p class="image-container"><img alt="Layout overlay, FY2025 cover page (page 1)" src="img/d860bad004d2b637.png"></p>
+<aside class="warning"><p> Recommendation from the audit: keep PubLayNet for table routing, where it is reliable, and rely on the fallback for text coverage. Part 4 tests whether Docling&#39;s layout model closes the text-recall gap. </p>
+</aside>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 4: Docling path and comparison" duration="8">
+        <p>The <code>parse_docling</code> stage converts every rendered PDF with Docling, as an alternative path next to the traditional one (not a replacement).</p>
+<h2 is-upgraded>What it writes</h2>
+<p><code>src/docling_parse.py</code> (run as <code>python -m src.docling_parse</code>, because the file name clashes with Docling&#39;s own <code>docling_parse</code> package) writes to <code>data/docling/</code>: Markdown, lossless JSON, every table as CSV, per-page Markdown (<code>export_to_markdown(page_no=n)</code>, which Part 9 needs for WER), and <code>{stem}.items.jsonl</code>.</p>
+<p>Docling writes bounding boxes with a bottom-left origin. Before any comparison, the stage converts them with <code>bbox.to_top_left_origin(page_height)</code> into <code>items.jsonl</code> (points, top-left), so they match our schema. The lossless JSON is left untouched.</p>
+<p>Setup: Docling 2.134.0, <code>do_ocr: false</code>, TableFormer <code>accurate</code> (from <code>params.yaml</code>).</p>
+<h2 is-upgraded>Run it</h2>
+<pre><code language="language-bash" class="language-bash">dvc repro parse_docling
+</code></pre>
+<h2 is-upgraded>Comparison, using the metrics of Parts 9 to 11</h2>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Dimension</p>
+</td><td colspan="1" rowspan="1"><p>Metric</p>
+</td><td colspan="1" rowspan="1"><p>Traditional</p>
+</td><td colspan="1" rowspan="1"><p>Docling</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Text accuracy</p>
+</td><td colspan="1" rowspan="1"><p>WER, 16 ground-truth pages</p>
+</td><td colspan="1" rowspan="1"><p><strong>1.67%</strong></p>
+</td><td colspan="1" rowspan="1"><p>6.32%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Numeric fidelity (text)</p>
+</td><td colspan="1" rowspan="1"><p>numeric-token recall</p>
+</td><td colspan="1" rowspan="1"><p><strong>99.48%</strong></p>
+</td><td colspan="1" rowspan="1"><p>87.43%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Table structure</p>
+</td><td colspan="1" rowspan="1"><p>cell F1, 2 tables, 111 cells</p>
+</td><td colspan="1" rowspan="1"><p>1.00</p>
+</td><td colspan="1" rowspan="1"><p>1.00</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Numeric fidelity (statements)</p>
+</td><td colspan="1" rowspan="1"><p>XBRL match rate</p>
+</td><td colspan="1" rowspan="1"><p><strong>456/456</strong></p>
+</td><td colspan="1" rowspan="1"><p>450/450</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Reading order (cover pages)</p>
+</td><td colspan="1" rowspan="1"><p>WER</p>
+</td><td colspan="1" rowspan="1"><p>3.74% pdfplumber, 59.87% layout-routed</p>
+</td><td colspan="1" rowspan="1"><p><strong>6.90%</strong></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Footnotes</p>
+</td><td colspan="1" rowspan="1"><p>separate labels</p>
+</td><td colspan="1" rowspan="1"><p>none</p>
+</td><td colspan="1" rowspan="1"><p><strong>footnote, caption</strong></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Throughput</p>
+</td><td colspan="1" rowspan="1"><p>s/page, p50 / p95</p>
+</td><td colspan="1" rowspan="1"><p><strong>0.70 / 3.49</strong></p>
+</td><td colspan="1" rowspan="1"><p>4.52 / 19.22</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Memory</p>
+</td><td colspan="1" rowspan="1"><p>peak RSS</p>
+</td><td colspan="1" rowspan="1"><p><strong>1,055 MiB</strong></p>
+</td><td colspan="1" rowspan="1"><p>3,597 MiB</p>
+</td></tr>
+</table>
+<p>Every number either path extracted matches XBRL. The difference is coverage: in both filings, Docling merged the first cash-flow row (&#34;Cash, cash equivalents ... beginning balances&#34;) into the column header, so 6 numbers never became data cells. The traditional path extracted that row.</p>
+<h2 is-upgraded>PDF vs HTML</h2>
+<p>The same filing (FY2024), converted from the original iXBRL HTML and from the rendered PDF:</p>
+<table>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>Rendered PDF</p>
+</td><td colspan="1" rowspan="1"><p>iXBRL HTML</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Tables found</p>
+</td><td colspan="1" rowspan="1"><p>51</p>
+</td><td colspan="1" rowspan="1"><p>63</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Conversion time</p>
+</td><td colspan="1" rowspan="1"><p>380–966 s</p>
+</td><td colspan="1" rowspan="1"><p>39–97 s</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Pages and bboxes</p>
+</td><td colspan="1" rowspan="1"><p>yes (60 pages)</p>
+</td><td colspan="1" rowspan="1"><p>none</p>
+</td></tr>
+</table>
+<p>HTML finds more tables and is about 10× faster, but has no pages or boxes, so it cannot support the page-and-bbox citations the brief requires. Rendering changes table boundaries, not table content.</p>
+<h2 is-upgraded>Recommendation</h2>
+<p>Keep the <strong>traditional pipeline as the primary path</strong>: lowest WER (1.7% vs 6.3%), highest numeric recall (99.5% vs 87.4%), all 456 statement numbers matched to XBRL including the cash-flow row Docling dropped, and about 6× less compute. Use <strong>Docling as the fallback</strong> where the traditional path is weak: side-by-side layouts (cover-page WER 6.9% vs 59.9% for layout-routed text), footnote separation, and as an independent second reading of statement tables. The full comparison is in <code>reports/docling_comparison.md</code>.</p>
+<p class="image-container"><img alt="A statement table, Docling vs traditional" src="img/f9c12f5c4c53a9d9.png"></p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 5: Metadata schema and provenance" duration="8">
+        <p>The <code>export</code> stage turns the traditional path&#39;s outputs (layout blocks routed through Parts 1 and 2) into one JSONL record per block, then rebuilds each section as Markdown.</p>
+<h2 is-upgraded>The schema</h2>
+<p><code>src/schema.py</code> defines the Appendix B schema as a pydantic model (<code>"schema": "lantern/1.0"</code>). Every record is validated when it is written, so a bad field fails the stage that produced it.</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Field</p>
+</td><td colspan="1" rowspan="1"><p>Example from the FY2025 10-K</p>
+</td><td colspan="1" rowspan="1"><p>Source</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>doc_id</code></p>
+</td><td colspan="1" rowspan="1"><p><code>0000320193-25-000079</code></p>
+</td><td colspan="1" rowspan="1"><p>accession number, from <code>manifest.csv</code></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>company</code>, <code>cik</code>, <code>ticker</code>, <code>form</code></p>
+</td><td colspan="1" rowspan="1"><p><code>Apple Inc.</code>, <code>0000320193</code>, <code>AAPL</code>, <code>10-K</code></p>
+</td><td colspan="1" rowspan="1"><p><code>manifest.csv</code></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>fiscal_year</code>, <code>fiscal_period</code></p>
+</td><td colspan="1" rowspan="1"><p><code>2025</code>, <code>FY</code></p>
+</td><td colspan="1" rowspan="1"><p><code>dei:DocumentFiscalYearFocus</code>, <code>dei:DocumentFiscalPeriodFocus</code></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>page</code>, <code>block_id</code>, <code>block_type</code></p>
+</td><td colspan="1" rowspan="1"><p><code>1</code>, <code>p0001_b001</code>, <code>Table</code></p>
+</td><td colspan="1" rowspan="1"><p>layout stage</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>bbox</code>, <code>units</code>, <code>origin</code></p>
+</td><td colspan="1" rowspan="1"><p><code>[8.38, 39.0, 555.3, 762.93]</code>, <code>pt</code>, <code>top-left</code></p>
+</td><td colspan="1" rowspan="1"><p>layout stage</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>section</code></p>
+</td><td colspan="1" rowspan="1"><p>Item heading, else nearest Title</p>
+</td><td colspan="1" rowspan="1"><p>export stage</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>text</code>, <code>table</code></p>
+</td><td colspan="1" rowspan="1"><p>block text, or <code>{columns, rows, raw_cells, scale}</code></p>
+</td><td colspan="1" rowspan="1"><p>Parts 1 and 2</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>extractor</code>, <code>extractor_version</code></p>
+</td><td colspan="1" rowspan="1"><p><code>pdfplumber</code>, <code>pdfplumber 0.11.10</code></p>
+</td><td colspan="1" rowspan="1"><p>the stage that produced the text</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>ocr</code>, <code>ocr_conf</code></p>
+</td><td colspan="1" rowspan="1"><p><code>false</code>, <code>null</code></p>
+</td><td colspan="1" rowspan="1"><p>Part 1</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>source_path</code>, <code>sha256</code></p>
+</td><td colspan="1" rowspan="1"><p><code>data/rendered/AAPL_10K_20250927.pdf</code>, file hash</p>
+</td><td colspan="1" rowspan="1"><p>the rendered PDF</p>
+</td></tr>
+</table>
+<p>Each record also carries three fields beyond Appendix B: <code>detector</code> and <code>detector_score</code> (the layout model and its confidence for the block) and <code>figure_path</code> (the crop in <code>data/figures/</code> for Figure blocks).</p>
+<h2 is-upgraded>Run it</h2>
+<pre><code language="language-bash" class="language-bash">dvc repro export
+</code></pre>
+<h2 is-upgraded>Check the results</h2>
+<p>One record, pretty-printed:</p>
+<pre><code language="language-bash" class="language-bash">head -n 1 data/export/AAPL_10K_20250927.jsonl | python -m json.tool
+</code></pre>
+<p>The first record on page 1 is a cover-page block that the layout model (<code>tf_efficientdet_d0</code>) labelled <code>Table</code> with a score of 0.254. It carries no <code>table</code> object, and its text came from pdfplumber. This is the PubLayNet domain shift the tutorial warns about: the model was trained on journal articles, not SEC cover pages.</p>
+<p>Keys are identical across all records in both filings. This prints a set with exactly one tuple of keys:</p>
+<pre><code language="language-bash" class="language-bash">python -c &#34;import json,glob; print({tuple(sorted(json.loads(l))) for f in glob.glob(&#39;data/export/*.jsonl&#39;) for l in open(f)})&#34;
+</code></pre>
+<pre><code language="language-text" class="language-text">{(&#39;bbox&#39;, &#39;block_id&#39;, &#39;block_type&#39;, &#39;cik&#39;, &#39;company&#39;, &#39;detector&#39;, &#39;detector_score&#39;, &#39;doc_id&#39;, &#39;extractor&#39;, &#39;extractor_version&#39;, &#39;figure_path&#39;, &#39;fiscal_period&#39;, &#39;fiscal_year&#39;, &#39;form&#39;, &#39;ocr&#39;, &#39;ocr_conf&#39;, &#39;origin&#39;, &#39;page&#39;, &#39;schema&#39;, &#39;section&#39;, &#39;sha256&#39;, &#39;source_path&#39;, &#39;table&#39;, &#39;text&#39;, &#39;ticker&#39;, &#39;units&#39;)}
+</code></pre>
+<p>Provenance in the Markdown. Every block is preceded by an HTML comment with the accession number, page and block id. A reader never sees it, but a chunker in Case Study 2 can keep it as metadata. Use single quotes here: in zsh, <code>!</code> inside double quotes triggers history expansion.</p>
+<pre><code language="language-bash" class="language-bash">grep -n -A1 &#39;&lt;!--&#39; data/export/AAPL_10K_20250927.md | head
+</code></pre>
+<pre><code language="language-text" class="language-text">3:&lt;!-- 0000320193-25-000079 p1 p0001_b001 --&gt;
+12:&lt;!-- 0000320193-25-000079 p1 p0001_b002 --&gt;
+66:&lt;!-- 0000320193-25-000079 p1 p0001_b003 --&gt;
+72:&lt;!-- 0000320193-25-000079 p1 p0001_b004 --&gt;
+</code></pre>
+<p class="image-container"><img alt="JSONL record" src="img/9a78a720049c6f0e.png"></p>
+<p class="image-container"><img alt="Markdown with provenance comments" src="img/b17b1b80d4559332.png"></p>
+<h2 is-upgraded>Trace one number</h2>
+<p>Net income for FY2025 appears in the Markdown as a table row (values in millions, FY2025, FY2024, FY2023):</p>
+<pre><code language="language-bash" class="language-bash">grep -n -i &#39;net income&#39; data/export/AAPL_10K_20250927.md | head -5
+</code></pre>
+<pre><code language="language-text" class="language-text">2591:| Net income | 112,010 | 93,736 | 96,995 |
+</code></pre>
+<p>The nearest provenance comment above that line names the block it came from:</p>
+<pre><code language="language-bash" class="language-bash">awk &#39;NR&lt;=2591 &amp;&amp; /&lt;!--/{c=$0} NR==2591{print c; exit}&#39; data/export/AAPL_10K_20250927.md
+</code></pre>
+<pre><code language="language-text" class="language-text">&lt;!-- 0000320193-25-000079 p32 p0032_b003 --&gt;
+</code></pre>
+<p>The matching JSONL record (selected fields):</p>
+<pre><code language="language-bash" class="language-bash">python -c &#34;import json; [print(json.dumps({k:r[k] for k in (&#39;page&#39;,&#39;block_id&#39;,&#39;block_type&#39;,&#39;bbox&#39;,&#39;section&#39;,&#39;extractor&#39;)})) for r in map(json.loads, open(&#39;data/export/AAPL_10K_20250927.jsonl&#39;)) if r[&#39;block_id&#39;]==&#39;p0032_b003&#39;]&#34;
+</code></pre>
+<pre><code language="language-json" class="language-json">{&#34;page&#34;: 32, &#34;block_id&#34;: &#34;p0032_b003&#34;, &#34;block_type&#34;: &#34;Table&#34;, &#34;bbox&#34;: [3.39, 95.22, 604.84, 548.43], &#34;section&#34;: &#34;Item 8&#34;, &#34;extractor&#34;: &#34;camelot-stream&#34;}
+</code></pre>
+<p>So the number traces back to a Table block on page 32 of the rendered PDF, in Item 8 (Financial Statements), extracted with Camelot stream. The bbox covers the whole statement table, not the single row: provenance is stored per block.</p>
+<p>To draw that box on the page:</p>
+<pre><code language="language-bash" class="language-bash">python -c &#34;import pdfplumber; pdf=pdfplumber.open(&#39;data/rendered/AAPL_10K_20250927.pdf&#39;); pdf.pages[31].to_image(resolution=110).draw_rect((3.39, 95.22, 604.84, 548.43), stroke=&#39;red&#39;, stroke_width=3).save(&#39;docs/img/p5-bbox-highlight.png&#39;)&#34;
+</code></pre>
+<p class="image-container"><img alt="bbox highlighted on the rendered page" src="img/e5d582f5f8b74988.png"></p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 6: Storage formats" duration="6">
+        <p>The <code>export</code> stage writes every filing in three formats from the same validated records, so they never disagree about content. They differ only in what they keep.</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Role</p>
+</td><td colspan="1" rowspan="1"><p>Format</p>
+</td><td colspan="1" rowspan="1"><p>File</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Source of truth</p>
+</td><td colspan="1" rowspan="1"><p>JSONL</p>
+</td><td colspan="1" rowspan="1"><p><code>data/export/{stem}.jsonl</code></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Feeds Case Study 2 (retrieval and question answering)</p>
+</td><td colspan="1" rowspan="1"><p>Markdown, generated from the JSONL records and never edited by hand</p>
+</td><td colspan="1" rowspan="1"><p><code>data/export/{stem}.md</code></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Baseline only</p>
+</td><td colspan="1" rowspan="1"><p>TXT</p>
+</td><td colspan="1" rowspan="1"><p><code>data/export/{stem}.txt</code></p>
+</td></tr>
+</table>
+<h2 is-upgraded>Measure size and token cost</h2>
+<pre><code language="language-bash" class="language-bash">python -m src.format_stats
+cat reports/format_stats.csv
+</code></pre>
+<p>This writes <code>reports/format_stats.csv</code> and cuts a 4-page test slice (FY2025 PDF pages 31 to 34: the Item 8 heading, statement index, income statement, comprehensive income and balance sheet) into <code>reports/format_test/</code>. Tokens are approximated as characters / 4.</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Scope</p>
+</td><td colspan="1" rowspan="1"><p>Format</p>
+</td><td colspan="1" rowspan="1"><p>Bytes</p>
+</td><td colspan="1" rowspan="1"><p>Approx. tokens</p>
+</td><td colspan="1" rowspan="1"><p>vs TXT</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>FY2025 full filing</p>
+</td><td colspan="1" rowspan="1"><p>JSONL</p>
+</td><td colspan="1" rowspan="1"><p>795,499</p>
+</td><td colspan="1" rowspan="1"><p>198,384</p>
+</td><td colspan="1" rowspan="1"><p>3.9×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>Markdown</p>
+</td><td colspan="1" rowspan="1"><p>249,975</p>
+</td><td colspan="1" rowspan="1"><p>62,062</p>
+</td><td colspan="1" rowspan="1"><p>1.2×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>TXT</p>
+</td><td colspan="1" rowspan="1"><p>207,509</p>
+</td><td colspan="1" rowspan="1"><p>51,446</p>
+</td><td colspan="1" rowspan="1"><p>1.0×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>FY2024 full filing</p>
+</td><td colspan="1" rowspan="1"><p>JSONL</p>
+</td><td colspan="1" rowspan="1"><p>811,191</p>
+</td><td colspan="1" rowspan="1"><p>202,352</p>
+</td><td colspan="1" rowspan="1"><p>4.0×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>Markdown</p>
+</td><td colspan="1" rowspan="1"><p>248,304</p>
+</td><td colspan="1" rowspan="1"><p>61,669</p>
+</td><td colspan="1" rowspan="1"><p>1.2×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>TXT</p>
+</td><td colspan="1" rowspan="1"><p>204,869</p>
+</td><td colspan="1" rowspan="1"><p>50,810</p>
+</td><td colspan="1" rowspan="1"><p>1.0×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>FY2025 pages 31–34</p>
+</td><td colspan="1" rowspan="1"><p>JSONL</p>
+</td><td colspan="1" rowspan="1"><p>30,565</p>
+</td><td colspan="1" rowspan="1"><p>7,635</p>
+</td><td colspan="1" rowspan="1"><p>6.4×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>Markdown</p>
+</td><td colspan="1" rowspan="1"><p>6,449</p>
+</td><td colspan="1" rowspan="1"><p>1,610</p>
+</td><td colspan="1" rowspan="1"><p>1.4×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>TXT</p>
+</td><td colspan="1" rowspan="1"><p>4,771</p>
+</td><td colspan="1" rowspan="1"><p>1,190</p>
+</td><td colspan="1" rowspan="1"><p>1.0×</p>
+</td></tr>
+</table>
+<p>JSONL costs about 4× the tokens of plain text for a whole filing, and 6.4× on statement pages, where every table is stored twice (raw and normalized) with its metadata fields. Markdown costs 20 to 40% more than plain text while keeping the Item headings, the tables and a provenance comment before every block.</p>
+<h2 is-upgraded>Ask the same three questions of each format</h2>
+<p>The same slice was given to the same model in a new chat per format, with a prompt that said to use only the document. Scoring rules were fixed before any answer was seen. Answers are recorded word for word in <code>reports/format_test/llm_answers.md</code>.</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Question</p>
+</td><td colspan="1" rowspan="1"><p>Tests</p>
+</td><td colspan="1" rowspan="1"><p>Correct answer</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Q1. Net income in the latest fiscal year, and on which page?</p>
+</td><td colspan="1" rowspan="1"><p>provenance</p>
+</td><td colspan="1" rowspan="1"><p>$112,010 million; PDF page 32 (printed page 29)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Q2. &#34;Other income/(expense), net&#34; in fiscal 2023: income or expense?</p>
+</td><td colspan="1" rowspan="1"><p>sign, table structure</p>
+</td><td colspan="1" rowspan="1"><p>$(565) million, an expense</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Q3. Which Item has the balance sheets; total assets at the end of fiscal 2025?</p>
+</td><td colspan="1" rowspan="1"><p>section, number</p>
+</td><td colspan="1" rowspan="1"><p>Item 8; $359,241 million</p>
+</td></tr>
+</table>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Format</p>
+</td><td colspan="1" rowspan="1"><p>Scored run</p>
+</td><td colspan="1" rowspan="1"><p>Where the Q1 page came from</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>JSONL</p>
+</td><td colspan="1" rowspan="1"><p>3 / 3</p>
+</td><td colspan="1" rowspan="1"><p>the <code>page</code> field, plus the footer record for the printed page</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Markdown</p>
+</td><td colspan="1" rowspan="1"><p>3 / 3</p>
+</td><td colspan="1" rowspan="1"><p>the provenance comment <code>p32</code></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>TXT</p>
+</td><td colspan="1" rowspan="1"><p>2 / 3 + 1 partial</p>
+</td><td colspan="1" rowspan="1"><p>matching detached page numbers to statement titles by order; the answer changed between runs</p>
+</td></tr>
+</table>
+<p>All three formats got every number and sign right. The difference is how well each answer is grounded: JSONL and Markdown gave the page from explicit markers, while TXT had to guess.</p>
+<p class="image-container"><img alt="Scored results of the format test, Run 2" src="img/a5e47fd1fbc666eb.png"></p>
+<h2 is-upgraded>The decision</h2>
+<p>JSONL is the source of truth. It is the only format that keeps every field (page, bbox, block id, extractor version, raw and normalized cells, sha256), and Part 11 and any Case Study 2 citation need those fields. At about 200,000 tokens per filing, it is too expensive as LLM context.</p>
+<p>Markdown feeds Case Study 2. It answered as accurately as JSONL at about a fifth of the tokens on the slice, its <code>## Item</code> headings let text be split by section, and every block keeps its <code><!-- doc_id pN block_id --></code> comment, which leads back to the JSONL record and its bbox.</p>
+<p>TXT is kept only as a baseline, to show what the structure in the other two formats is worth.</p>
+<aside class="warning"><p> Limits of this test: one model, two runs, one 4-page slice of statement pages, and lookup questions whose answers appear in all three formats. Token counts are characters / 4, not a real tokenizer. Full details are in <code>reports/format_decision.md</code>. </p>
+</aside>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 7: Build vs buy with AWS Textract" duration="8">
+        <p>The same pages were sent through AWS Textract (<code>AnalyzeDocument</code> with <code>TABLES</code> and <code>LAYOUT</code>, region <code>us-east-1</code>): 7 of the 10 allowed pages. These were the FY2025 income statement (p32), the balance sheet (p34), the two tables that scored below <code>tables.accept_score</code> (p22, p47), and the three pages of the scanned fixture. Textract&#39;s output was mapped into the Part 5 schema and compared cell by cell with the open-source output.</p>
+<h2 is-upgraded>The fallback</h2>
+<pre><code language="language-yaml" class="language-yaml">managed:
+  enabled: false
+  provider: aws-textract
+  region: us-east-1
+</code></pre>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Piece</p>
+</td><td colspan="1" rowspan="1"><p>What it does</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>src/managed/fallback.py</code></p>
+</td><td colspan="1" rowspan="1"><p>Called from <code>src/export.py</code> (tables) and <code>src/parse_text.py</code> (OCR). With <code>enabled: false</code> it reads cache hits and never calls the API</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>src/managed/mapper.py</code></p>
+</td><td colspan="1" rowspan="1"><p>Maps Textract responses into schema records (bbox from page fractions to PDF points, top-left; tables through the Part 2 normalizer)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>data/managed/</code></p>
+</td><td colspan="1" rowspan="1"><p>The 7 raw responses, one JSON file each, keyed by a hash of (source PDF hash, page, provider, API, features)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>data/managed.dvc</code></p>
+</td><td colspan="1" rowspan="1"><p>Tracks the cache with <code>dvc add</code>. It is a cache, not a stage output</p>
+</td></tr>
+</table>
+<p>Every fallback decision is logged in <code>data/export/managed_fallback_log.csv</code> and <code>data/parsed/managed_fallback_log.csv</code>. Because the default is <code>enabled: false</code>, <code>dvc repro</code> runs without AWS credentials.</p>
+<pre><code language="language-bash" class="language-bash">dvc pull data/managed.dvc
+ls data/managed
+</code></pre>
+<p class="image-container"><img alt="Cached Textract responses and the fallback log" src="img/6b85ff7bc6244e23.png"></p>
+<h2 is-upgraded>Compare the two paths</h2>
+<p>No API calls are needed; both commands work from the cache:</p>
+<pre><code language="language-bash" class="language-bash">python -m src.managed.mapper
+python -m src.managed.compare
+ls reports/managed/
+</code></pre>
+<p><strong>Statement tables, cell by cell:</strong></p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Page</p>
+</td><td colspan="1" rowspan="1"><p>Open-source numeric cells</p>
+</td><td colspan="1" rowspan="1"><p>Textract numeric cells</p>
+</td><td colspan="1" rowspan="1"><p>Identical</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>FY2025 p32, income statement</p>
+</td><td colspan="1" rowspan="1"><p>57</p>
+</td><td colspan="1" rowspan="1"><p>57</p>
+</td><td colspan="1" rowspan="1"><p>57</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>FY2025 p34, balance sheet</p>
+</td><td colspan="1" rowspan="1"><p>54</p>
+</td><td colspan="1" rowspan="1"><p>54</p>
+</td><td colspan="1" rowspan="1"><p>54</p>
+</td></tr>
+</table>
+<p><strong>OCR on the scanned fixture</strong> (WER against the born-digital text of the same pages, after treating curly/straight quotes, dashes and ®/™/© as equal):</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Scanned page</p>
+</td><td colspan="1" rowspan="1"><p>Tesseract WER</p>
+</td><td colspan="1" rowspan="1"><p>Textract WER</p>
+</td><td colspan="1" rowspan="1"><p>Numbers correct</p>
+</td><td colspan="1" rowspan="1"><p>Confidence (Tesseract / Textract)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>1</p>
+</td><td colspan="1" rowspan="1"><p>0.000</p>
+</td><td colspan="1" rowspan="1"><p>0.004</p>
+</td><td colspan="1" rowspan="1"><p>both 100%</p>
+</td><td colspan="1" rowspan="1"><p>95.4 / 99.1</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>2</p>
+</td><td colspan="1" rowspan="1"><p>0.000</p>
+</td><td colspan="1" rowspan="1"><p>0.002</p>
+</td><td colspan="1" rowspan="1"><p>both 100%</p>
+</td><td colspan="1" rowspan="1"><p>95.7 / 99.8</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>3</p>
+</td><td colspan="1" rowspan="1"><p>0.002</p>
+</td><td colspan="1" rowspan="1"><p>0.004</p>
+</td><td colspan="1" rowspan="1"><p>both 100%</p>
+</td><td colspan="1" rowspan="1"><p>95.5 / 99.7</p>
+</td></tr>
+</table>
+<p>Textract reported higher confidence, but Tesseract was at least as accurate, so confidence thresholds have to be calibrated per engine.</p>
+<p><strong>The two low-score tables the fallback replaced:</strong></p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Page</p>
+</td><td colspan="1" rowspan="1"><p>Camelot (best attempt)</p>
+</td><td colspan="1" rowspan="1"><p>Textract</p>
+</td><td colspan="1" rowspan="1"><p>Values correct</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>p22, share repurchases</p>
+</td><td colspan="1" rowspan="1"><p><code>camelot-network</code>, score 78.46: headers split over 6 rows, top header lines cut off</p>
+</td><td colspan="1" rowspan="1"><p>complete one-row headers</p>
+</td><td colspan="1" rowspan="1"><p>11/11 both</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>p47, term debt</p>
+</td><td colspan="1" rowspan="1"><p><code>camelot-stream</code>, score 72.69: an extra first row from the sentence above the table</p>
+</td><td colspan="1" rowspan="1"><p>no extra row, headers merged</p>
+</td><td colspan="1" rowspan="1"><p>21/21 both</p>
+</td></tr>
+</table>
+<p>The fallback fixed table structure, not numbers. A low Camelot score did not mean wrong values.</p>
+<p class="image-container"><img alt="Camelot vs Textract, p22 share repurchases" src="img/3acb285118533ba0.png"></p>
+<h2 is-upgraded>Cost</h2>
+<p>From AWS&#39;s Textract pricing page (checked 2026-10-07): Tables at $0.015 per page for the first 1 million pages a month, with Layout free alongside Tables.</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Volume</p>
+</td><td colspan="1" rowspan="1"><p>Pages</p>
+</td><td colspan="1" rowspan="1"><p>Textract, Tables + Layout</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Our corpus (2 filings)</p>
+</td><td colspan="1" rowspan="1"><p>121</p>
+</td><td colspan="1" rowspan="1"><p>about $1.82</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>5,000 filings a year, every page</p>
+</td><td colspan="1" rowspan="1"><p>about 302,500 a year</p>
+</td><td colspan="1" rowspan="1"><p>about $4,540 a year</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>5,000 filings a year, fallback only</p>
+</td><td colspan="1" rowspan="1"><p>at most about 50,000 a year</p>
+</td><td colspan="1" rowspan="1"><p>at most about $750 a year</p>
+</td></tr>
+</table>
+<h2 is-upgraded>Data handling for client documents</h2>
+<p>Public 10-Ks are low risk, but client documents would need answers first: whether content is used for training (and an AI-services opt-out in AWS Organizations), which region stores it, how long it is kept and how to delete it, which compliance standards the client requires, and a least-privilege IAM role with keys kept out of the repo. Details are in <code>reports/build_vs_buy.md</code>.</p>
+<h2 is-upgraded>Recommendation</h2>
+<p>Keep the open-source pipeline as the primary path. Textract matched it number for number on every page compared, and its one measurable benefit was cleaner table structure on two tables whose numbers were already right. Keep Textract as the optional, cached fallback, off by default, and trigger it from a validation failure (an XBRL mismatch in Part 11) rather than from Camelot&#39;s score alone.</p>
+<aside class="warning"><p> Limits: seven pages, one company, one provider. The scan is a clean 300 DPI rasterization; degraded scans, where a managed service usually helps most, were not tested. </p>
+</aside>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 8: DVC pipeline and CI" duration="8">
+        <p>Every step of the pipeline is a DVC stage in <code>dvc.yaml</code>, with its command, dependencies, parameters and outputs. <code>dvc.lock</code> records the hash of every output, so <code>dvc pull</code> gives anyone exactly our files, and <code>dvc repro</code> only re-runs a stage when its code, parameters or inputs change.</p>
+<h2 is-upgraded>The stages</h2>
+<p>The brief&#39;s nine canonical stages:</p>
+<p><code>download</code> → <code>render</code> → <code>parse_pdfplumber</code>, <code>tables</code>, <code>layout</code>, <code>parse_docling</code> → <code>export</code> → <code>xbrl</code> → <code>evaluate</code></p>
+<p>Three folders are inputs rather than stage outputs, so they are tracked with <code>dvc add</code>:</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Pointer file</p>
+</td><td colspan="1" rowspan="1"><p>What it tracks</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>data/managed.dvc</code></p>
+</td><td colspan="1" rowspan="1"><p>the cached Textract responses (Part 7)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>data/ground_truth.dvc</code></p>
+</td><td colspan="1" rowspan="1"><p>the hand-typed answer key (Part 9)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>data/bench.dvc</code></p>
+</td><td colspan="1" rowspan="1"><p>the benchmark measurements (Part 10)</p>
+</td></tr>
+</table>
+<p>Every threshold and setting lives in <code>params.yaml</code>, so changing one re-runs only the stages that read it.</p>
+<pre><code language="language-bash" class="language-bash">dvc stage list
+dvc dag
+</code></pre>
+<p class="image-container"><img alt="dvc stage list" src="img/f6a55a8689f5546.png"></p>
+<h2 is-upgraded>DVC remote access</h2>
+<p>The data lives in an AWS S3 bucket (<code>lantern-dvc-team1-2026</code>, us-east-2), with two remotes in <code>.dvc/config</code>:</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Remote</p>
+</td><td colspan="1" rowspan="1"><p>URL</p>
+</td><td colspan="1" rowspan="1"><p>Used for</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>public</code> (default)</p>
+</td><td colspan="1" rowspan="1"><p><code>https://lantern-dvc-team1-2026.s3.us-east-2.amazonaws.com/dvc</code></p>
+</td><td colspan="1" rowspan="1"><p>reading: anyone can <code>dvc pull</code>, with no credentials</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>store</code></p>
+</td><td colspan="1" rowspan="1"><p><code>s3://lantern-dvc-team1-2026/dvc</code></p>
+</td><td colspan="1" rowspan="1"><p>pushing: team members only</p>
+</td></tr>
+</table>
+<p>The bucket allows public reads of objects but not listing, and only the team&#39;s IAM user can write. To push, a team member sets the key locally; it goes into <code>.dvc/config.local</code>, which is never committed:</p>
+<pre><code language="language-bash" class="language-bash">dvc remote default --local store
+dvc remote modify --local store access_key_id &lt;key-id&gt;
+dvc remote modify --local store secret_access_key &lt;secret&gt;
+dvc push -r store
+</code></pre>
+<h2 is-upgraded>CI</h2>
+<p><code>.github/workflows/smoke.yml</code> runs on every pull request, with no EDGAR access, DVC remote or credentials: it installs the Python and system dependencies, runs the text and table scripts on the committed fixtures in <code>tests/fixtures/</code>, and then runs <code>pytest</code>. This is why every stage script accepts <code>--input</code> and <code>--output</code> arguments.</p>
+<p class="image-container"><img alt="A green CI run on a pull request" src="img/1b62657187c262f7.png"></p>
+<h2 is-upgraded>Results</h2>
+<p>On a fresh clone of <code>main</code>:</p>
+<ul>
+<li><code>dvc pull</code> fetched all 12 data folders with no errors.</li>
+<li><code>dvc repro</code> skipped all 9 stages and both pointer files: a second run with no changes skips everything, as the brief requires.</li>
+<li><code>dvc metrics show</code> read <code>reports/metrics.json</code>, and <code>pytest -q</code> passed 65 tests.</li>
+</ul>
+<aside class="warning"><p> A lesson from building this: our <code>.gitignore</code> used <code>data/*</code> with <code>!data/*.dvc</code>. Git read it correctly, but DVC&#39;s own Git library treated the whole <code>data/</code> folder as ignored, so a plain <code>dvc pull</code> silently skipped <code>data/managed</code>, the first standalone pointer file. Listing each data folder explicitly (<code>/data/raw/</code>, <code>/data/managed/</code> ...) fixed it, verified on a fresh clone. </p>
+</aside>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 9: Evaluation and regression tests" duration="8">
+        <p>The <code>evaluate</code> stage scores every extraction path against a hand-typed answer key.</p>
+<h2 is-upgraded>Ground truth</h2>
+<p><code>data/ground_truth/</code> (tracked with <code>data/ground_truth.dvc</code>), with fixture copies in <code>tests/fixtures/gt/</code> for CI. <strong>18 pages: 8 per filing, plus 2 fixtures:</strong></p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Stratum</p>
+</td><td colspan="1" rowspan="1"><p>FY2025</p>
+</td><td colspan="1" rowspan="1"><p>FY2024</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Statements</p>
+</td><td colspan="1" rowspan="1"><p>p32 income, p34 balance sheet, p36 cash flows</p>
+</td><td colspan="1" rowspan="1"><p>same pages</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Notes</p>
+</td><td colspan="1" rowspan="1"><p>p40, p45</p>
+</td><td colspan="1" rowspan="1"><p>p40, p45</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Prose</p>
+</td><td colspan="1" rowspan="1"><p>p5, p20</p>
+</td><td colspan="1" rowspan="1"><p>p5, p20</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Cover</p>
+</td><td colspan="1" rowspan="1"><p>p1</p>
+</td><td colspan="1" rowspan="1"><p>p1</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Multi-column</p>
+</td><td colspan="2" rowspan="1"><p><code>multicol.pdf</code> fixture (shared)</p>
+</td><td colspan="1" rowspan="1"></td></tr>
+<tr><td colspan="1" rowspan="1"><p>Scanned</p>
+</td><td colspan="2" rowspan="1"><p><code>scanned.pdf</code> fixture, page 1 (shared)</p>
+</td><td colspan="1" rowspan="1"></td></tr>
+</table>
+<p>The filings contain no multi-column or scanned page, so those two strata use the Part 0 fixtures, as the brief allows.</p>
+<p><strong>How the pages were made:</strong> typed from the rendered page image, or &#34;html-assisted&#34; (copied from the original HTML filing, a different source from the PDF text layer the parsers read, then corrected against the page image). The method for every page is in <code>data/ground_truth/pages.csv</code>. <strong>No ground truth was made from parser output.</strong> The rules are in <code>reports/ground_truth_conventions.md</code>.</p>
+<p><strong>Tables:</strong> the FY2025 income statement and balance sheet (111 cells) were keyed by two people independently. They agreed on 110 of 111 cells (F1 0.991). The one difference, a digit transposition in the 2024 diluted share count (15,048,095 vs 15,408,095), was resolved against the page image: 15,408,095.</p>
+<h2 is-upgraded>Run it</h2>
+<pre><code language="language-bash" class="language-bash">dvc repro evaluate
+dvc metrics show
+</code></pre>
+<p>Both sides of every comparison get the same normalization: Unicode NFKC, curly quotes to straight, dashes to &#34;-&#34;, &#34;$&#34; separated, whitespace collapsed, lowercase. <strong>Punctuation is kept</strong>, so a lost sign such as (321) becoming 321 counts as an error. Tables are compared as (row label, year, occurrence) → value, so tables of different shapes are compared fairly.</p>
+<h2 is-upgraded>Results on the filings (16 pages)</h2>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Source</p>
+</td><td colspan="1" rowspan="1"><p>WER</p>
+</td><td colspan="1" rowspan="1"><p>CER</p>
+</td><td colspan="1" rowspan="1"><p>Numeric recall</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>pdfplumber</p>
+</td><td colspan="1" rowspan="1"><p><strong>1.67%</strong></p>
+</td><td colspan="1" rowspan="1"><p><strong>1.54%</strong></p>
+</td><td colspan="1" rowspan="1"><p><strong>99.5%</strong></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Docling</p>
+</td><td colspan="1" rowspan="1"><p>6.32%</p>
+</td><td colspan="1" rowspan="1"><p>4.27%</p>
+</td><td colspan="1" rowspan="1"><p>87.4%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>layout</p>
+</td><td colspan="1" rowspan="1"><p>12.30%</p>
+</td><td colspan="1" rowspan="1"><p>10.89%</p>
+</td><td colspan="1" rowspan="1"><p>99.5%</p>
+</td></tr>
+</table>
+<p>WER per stratum:</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Stratum (pages)</p>
+</td><td colspan="1" rowspan="1"><p>pdfplumber</p>
+</td><td colspan="1" rowspan="1"><p>Docling</p>
+</td><td colspan="1" rowspan="1"><p>layout</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Statements (6)</p>
+</td><td colspan="1" rowspan="1"><p>1.67%</p>
+</td><td colspan="1" rowspan="1"><p>9.87%</p>
+</td><td colspan="1" rowspan="1"><p>4.74%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Notes (4)</p>
+</td><td colspan="1" rowspan="1"><p>2.20%</p>
+</td><td colspan="1" rowspan="1"><p>2.98%</p>
+</td><td colspan="1" rowspan="1"><p>6.78%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Prose (4)</p>
+</td><td colspan="1" rowspan="1"><p>0.11%</p>
+</td><td colspan="1" rowspan="1"><p>4.05%</p>
+</td><td colspan="1" rowspan="1"><p>5.37%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Cover (2)</p>
+</td><td colspan="1" rowspan="1"><p>3.74%</p>
+</td><td colspan="1" rowspan="1"><p>6.90%</p>
+</td><td colspan="1" rowspan="1"><p><strong>59.87%</strong></p>
+</td></tr>
+</table>
+<p>Tables (111 double-keyed cells): <strong>F1 1.0</strong> for both the traditional path and Docling.</p>
+<p>Fixtures (pdfplumber with the OCR fallback, as run in CI):</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Fixture</p>
+</td><td colspan="1" rowspan="1"><p>WER</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Statement (FY2025 p32)</p>
+</td><td colspan="1" rowspan="1"><p>2.27%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Multi-column</p>
+</td><td colspan="1" rowspan="1"><p>7.62%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Scanned (OCR)</p>
+</td><td colspan="1" rowspan="1"><p>0.00%</p>
+</td></tr>
+</table>
+<h2 is-upgraded>Findings</h2>
+<ol type="1">
+<li><strong>pdfplumber reads text best on every stratum:</strong> it reads the text layer directly, with no model between the page and the words.</li>
+<li><strong>Docling misses about 13% of a page&#39;s numbers</strong> (numeric recall 87.4%), most on statements. Part 11 found one cause: Docling merged the first cash-flow row into the column header. Where it does find tables, they are exact (F1 1.0).</li>
+<li><strong>Layout&#39;s reading order is weak on form-like pages:</strong> 60% WER on the cover, where the Part 3 audit found page-sized low-confidence Table and Figure boxes. On statements, notes and prose it stays at 5–7%, with every number present.</li>
+<li><strong>Multi-column is pdfplumber&#39;s hardest stratum</strong> (7.6%): it reads straight across the two side-by-side tables, interleaving their rows, while the ground truth reads the left table, then the right.</li>
+<li><strong>OCR scored 0.0 WER on the scanned fixture</strong> (544 words). The image is a clean digital render, so this is a best case for Tesseract, not a typical one.</li>
+<li><strong>Evaluation found a Part 4 bug:</strong> Docling&#39;s per-page Markdown was shifted by one page (its p32 file held p31). Its WER was 90% until the fix; the numbers above are after it.</li>
+</ol>
+<h2 is-upgraded>Regression tests</h2>
+<p><code>tests/test_quality.py</code> runs Parts 1 and 2 on the fixtures, grades them with <code>evaluate.py</code>, and compares the results with thresholds in <code>params.yaml</code> (<code>eval.thresholds</code>): the measured baseline plus a margin.</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Check</p>
+</td><td colspan="1" rowspan="1"><p>Measured</p>
+</td><td colspan="1" rowspan="1"><p>Fails if</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Statement text WER</p>
+</td><td colspan="1" rowspan="1"><p>2.27%</p>
+</td><td colspan="1" rowspan="1"><p>above 5%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Numeric recall</p>
+</td><td colspan="1" rowspan="1"><p>100%</p>
+</td><td colspan="1" rowspan="1"><p>below 98%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Table cell F1</p>
+</td><td colspan="1" rowspan="1"><p>1.0</p>
+</td><td colspan="1" rowspan="1"><p>below 0.98</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Scanned (OCR) WER</p>
+</td><td colspan="1" rowspan="1"><p>0.0%</p>
+</td><td colspan="1" rowspan="1"><p>above 5%</p>
+</td></tr>
+</table>
+<p><code>pytest -q</code> passes 65 tests, in CI with no network, DVC data or credentials.</p>
+<p><strong>A failing run, on purpose.</strong> With Part 2&#39;s structural guards switched off and lattice tried first (a temporary parameter file, <code>LANTERN_PARAMS=/tmp/params_broken.yaml</code>), the extractor fell back to lattice fragments with no year headers. <strong>Table cell F1 fell from 1.0 to 0.0</strong>, and the test failed:</p>
+<pre><code language="language-text" class="language-text">FAILED tests/test_quality.py::test_table_cell_f1 - AssertionError: table cell...
+E       AssertionError: table cell F1 0.0000 is below 0.98
+1 failed, 2 passed, 1 skipped in 18.73s
+</code></pre>
+<p>Both text tests still passed, as they should: the break was in table structure only. Full logs: <code>reports/evidence/quality_failing_run.txt</code> and <code>quality_passing_run.txt</code>.</p>
+<h2 is-upgraded>Drift between two pipeline versions</h2>
+<p><code>src/plot_drift.py</code> writes <code>reports/plots/drift.png</code>. The signal is layout block length (words per block), both filings, with Part 3&#39;s text-snapping distance at 0 pt and at 15 pt:</p>
+<table>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>0 pt</p>
+</td><td colspan="1" rowspan="1"><p>15 pt</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Blocks</p>
+</td><td colspan="1" rowspan="1"><p>1,796</p>
+</td><td colspan="1" rowspan="1"><p>1,705 (−5.1%)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Blocks under 5 words</p>
+</td><td colspan="1" rowspan="1"><p>35.0%</p>
+</td><td colspan="1" rowspan="1"><p>31.6%</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Median words per block</p>
+</td><td colspan="1" rowspan="1"><p>8</p>
+</td><td colspan="1" rowspan="1"><p>9</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Total words kept</p>
+</td><td colspan="1" rowspan="1"><p>61,375</p>
+</td><td colspan="1" rowspan="1"><p>61,423</p>
+</td></tr>
+</table>
+<p>The drop is concentrated in 1- and 2-word blocks: clipped words joining their paragraph instead of standing alone.</p>
+<p class="image-container"><img alt="Drift signal for two pipeline versions" src="img/eaeeb996e1ec5668.png"></p>
+<p><code>dvc metrics diff</code> compares <code>reports/metrics.json</code> with another branch; its output is in <code>reports/eval.md</code>.</p>
+<aside class="warning"><p> Limits: 16 filing pages and two fixtures, with only two tables double-keyed. The multi-column and scanned strata use fixtures, and the scan is a clean render. Fixture metrics cover pdfplumber only, since CI does not run layout or Docling. </p>
+</aside>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 10: Cost and throughput" duration="6">
+        <p><code>src/bench.py</code> times the pipeline&#39;s own functions on all 61 pages of the FY2025 filing (within the brief&#39;s 50 to 100), and writes one CSV per stage to <code>data/bench/</code> (tracked with <code>data/bench.dvc</code>).</p>
+<h2 is-upgraded>Machine</h2>
+<p>Intel Core 7 150U (10 cores, 12 threads), 15.7 GiB RAM, no GPU, Windows, Python 3.11.2 (from <code>data/bench/machine.json</code>). Each stage ran in its own fresh process, on mains power with other heavy applications closed.</p>
+<h2 is-upgraded>Run it</h2>
+<pre><code language="language-bash" class="language-bash">python src/bench.py --machine
+python src/bench.py --stage parse_pdfplumber
+python src/bench.py --stage layout --run 1
+python src/bench.py --summarize
+</code></pre>
+<h2 is-upgraded>Per-stage throughput</h2>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Stage</p>
+</td><td colspan="1" rowspan="1"><p>Pages</p>
+</td><td colspan="1" rowspan="1"><p>s/page p50</p>
+</td><td colspan="1" rowspan="1"><p>s/page p95</p>
+</td><td colspan="1" rowspan="1"><p>Peak RSS MiB</p>
+</td><td colspan="1" rowspan="1"><p>Failures</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>parse_pdfplumber</p>
+</td><td colspan="1" rowspan="1"><p>61</p>
+</td><td colspan="1" rowspan="1"><p>0.096</p>
+</td><td colspan="1" rowspan="1"><p>0.233</p>
+</td><td colspan="1" rowspan="1"><p>513</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>ocr_tesseract (forced on every page)</p>
+</td><td colspan="1" rowspan="1"><p>61</p>
+</td><td colspan="1" rowspan="1"><p>1.505</p>
+</td><td colspan="1" rowspan="1"><p>2.895</p>
+</td><td colspan="1" rowspan="1"><p>85</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>tables (statement pages)</p>
+</td><td colspan="1" rowspan="1"><p>5</p>
+</td><td colspan="1" rowspan="1"><p>0.210</p>
+</td><td colspan="1" rowspan="1"><p>0.798</p>
+</td><td colspan="1" rowspan="1"><p>537</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>layout, full stage</p>
+</td><td colspan="1" rowspan="1"><p>61</p>
+</td><td colspan="1" rowspan="1"><p>0.58</p>
+</td><td colspan="1" rowspan="1"><p>3.19</p>
+</td><td colspan="1" rowspan="1"><p>n/a</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>parse_docling</p>
+</td><td colspan="1" rowspan="1"><p>61</p>
+</td><td colspan="1" rowspan="1"><p>4.517</p>
+</td><td colspan="1" rowspan="1"><p>19.215</p>
+</td><td colspan="1" rowspan="1"><p>3,597</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>export</p>
+</td><td colspan="1" rowspan="1"><p>61</p>
+</td><td colspan="1" rowspan="1"><p>0.005</p>
+</td><td colspan="1" rowspan="1"><p>0.005</p>
+</td><td colspan="1" rowspan="1"><p>105</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td></tr>
+</table>
+<p>No real page triggers OCR, so OCR was forced on every page to measure what a scanned filing would cost. Tesseract runs as a separate program, so its own memory is not in Python&#39;s RSS.</p>
+<p><strong>Cold vs warm.</strong> Model loading takes 7.5 s (layout) and 9.2 s (Docling) on a first run, and less than half that on a second run, when the weights are in the operating system&#39;s file cache. A long-running worker pays it once.</p>
+<h2 is-upgraded>Cost</h2>
+<p>Assumptions: an m7i-flex.large (2 vCPU, 8 GiB) at $0.09576/hour (AWS on-demand, US East Ohio, checked 2026-10-08), assumed about as fast as the benchmark laptop; 5,000 filings a year × 60.5 pages = 302,500 pages; engineering time not included.</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Path</p>
+</td><td colspan="1" rowspan="1"><p>s/page</p>
+</td><td colspan="1" rowspan="1"><p>USD per 1,000 pages</p>
+</td><td colspan="1" rowspan="1"><p>USD per year</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Traditional, p50</p>
+</td><td colspan="1" rowspan="1"><p>0.70</p>
+</td><td colspan="1" rowspan="1"><p>0.019</p>
+</td><td colspan="1" rowspan="1"><p>5.63</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Traditional, p95</p>
+</td><td colspan="1" rowspan="1"><p>3.49</p>
+</td><td colspan="1" rowspan="1"><p>0.093</p>
+</td><td colspan="1" rowspan="1"><p>28.08</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Traditional + OCR on every page, p50</p>
+</td><td colspan="1" rowspan="1"><p>2.21</p>
+</td><td colspan="1" rowspan="1"><p>0.059</p>
+</td><td colspan="1" rowspan="1"><p>17.74</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Docling, p50</p>
+</td><td colspan="1" rowspan="1"><p>4.52</p>
+</td><td colspan="1" rowspan="1"><p>0.120</p>
+</td><td colspan="1" rowspan="1"><p>36.35</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Docling, p95</p>
+</td><td colspan="1" rowspan="1"><p>19.22</p>
+</td><td colspan="1" rowspan="1"><p>0.511</p>
+</td><td colspan="1" rowspan="1"><p>154.62</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Textract, Tables + Layout (list price)</strong></p>
+</td><td colspan="1" rowspan="1"><p>n/a</p>
+</td><td colspan="1" rowspan="1"><p><strong>15.00</strong></p>
+</td><td colspan="1" rowspan="1"><p><strong>4,537.50</strong></p>
+</td></tr>
+</table>
+<p>Even the most pessimistic open-source figure is about 29× cheaper than Textract, and the traditional path at the median about 800× cheaper.</p>
+<h2 is-upgraded>Bottlenecks and recommendations</h2>
+<ul>
+<li><strong>On the traditional path, </strong><strong><code>layout</code></strong><strong> is the bottleneck:</strong> 83% of the median time per page, a little more than half of it Camelot and routing around the model.</li>
+<li><strong>Docling is the bottleneck of the whole pipeline:</strong> 4.5 s/page at the median, about 6.5× the entire traditional path, concentrated on table-heavy pages.</li>
+<li><strong>CPU, not GPU.</strong> A g4dn.xlarge (one T4) costs 5.5× more per hour; at our volume Docling on CPU costs $36–155 a year, the most a GPU could save. A GPU was not benchmarked, so no speed-up is claimed.</li>
+<li><strong>Concurrency:</strong> one worker per vCPU, except Docling, which fits one worker per 8 GiB machine (3.6 GiB peak). Parallelize by filing, and load each model once per worker.</li>
+<li><strong>EDGAR&#39;s 10 requests/second:</strong> about 3 requests per filing, so 5,000 filings need about 25 minutes a year. Download is not a bottleneck, but all workers must share one rate limiter.</li>
+</ul>
+<p>Full tables, cold-start figures and limitations are in <code>reports/benchmarks.md</code>.</p>
+<p class="image-container"><img alt="Benchmark summary" src="img/d7983ddb2207cfaf.png"></p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 11: XBRL extraction and validation" duration="6">
+        <p>The filing tells us its own numbers in machine-readable form. The <code>xbrl</code> stage uses that as the answer key for every number in the extracted statement tables, for both filings and both table paths.</p>
+<h2 is-upgraded>What was checked</h2>
+<ul>
+<li><strong>Traditional:</strong> Part 2&#39;s normalized tables (<code>data/tables/*.norm.csv</code>), already scaled.</li>
+<li><strong>Docling:</strong> Part 4&#39;s table CSVs, scaled with Part 2&#39;s normalizer and the page caption.</li>
+<li><strong>Statements:</strong> income, comprehensive income, balance sheet, cash flows. The statement of shareholders&#39; equity is out of scope: it is a grid of equity components tagged with dimensions, not a label-by-year table.</li>
+</ul>
+<p><code>src/xbrl.py</code> loads each unpacked iXBRL filing with <strong>Arelle</strong>: 957 numeric facts in <code>aapl-20240928.htm</code> and 962 in <code>aapl-20250927.htm</code>. Arelle reports a period ending September 27 as midnight on September 28, so one day is subtracted from every end date before matching.</p>
+<h2 is-upgraded>Method</h2>
+<p><strong>Label to concept</strong>, in order, with the method recorded for every line:</p>
+<ol type="1">
+<li><strong>Curated</strong> (<code>config/label_map.yaml</code>, 27 entries): dimensional lines (Products and Services are slices of a total), labels printed twice, and the cases diagnosed below.</li>
+<li><strong>Label linkbase:</strong> the filing&#39;s own labels, all roles.</li>
+<li><strong>Fuzzy:</strong> a close spelling match (<code>xbrl.fuzzy_cutoff: 0.88</code>).</li>
+</ol>
+<p>Ambiguity is resolved by <strong>period type</strong>: a balance sheet line is a balance at a date (an instant concept), and a flow statement line is a change over the year (a duration concept).</p>
+<p><strong>Comparison:</strong> the tolerance comes from the fact&#39;s <code>decimals</code> (<code>-6</code> gives ±0.5 million). Each line gets a status: <code>match</code>, <code>match_negated</code> (the same amount printed with a negated label, such as an outflow in parentheses that XBRL stores as positive), <code>sign</code>, <code>scale_xN</code>, <code>mismatch</code>, <code>xbrl_missing</code> or <code>unmapped</code>.</p>
+<h2 is-upgraded>Run it</h2>
+<pre><code language="language-bash" class="language-bash">dvc repro xbrl
+</code></pre>
+<p>Outputs: <code>data/xbrl/facts.csv</code>, <code>comparison.csv</code> and <code>summary.json</code>, plus <code>notebooks/xbrl_validation.ipynb</code>.</p>
+<h2 is-upgraded>Results</h2>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Statement</p>
+</td><td colspan="1" rowspan="1"><p>Traditional</p>
+</td><td colspan="1" rowspan="1"><p>Docling</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Income</p>
+</td><td colspan="1" rowspan="1"><p>114 / 114</p>
+</td><td colspan="1" rowspan="1"><p>114 / 114</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Comprehensive income</p>
+</td><td colspan="1" rowspan="1"><p>60 / 60</p>
+</td><td colspan="1" rowspan="1"><p>60 / 60</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Balance sheet</p>
+</td><td colspan="1" rowspan="1"><p>108 / 108</p>
+</td><td colspan="1" rowspan="1"><p>108 / 108</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Cash flows</p>
+</td><td colspan="1" rowspan="1"><p>174 / 174</p>
+</td><td colspan="1" rowspan="1"><p>168 / 168</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>All</strong></p>
+</td><td colspan="1" rowspan="1"><p><strong>456 / 456 (100%)</strong></p>
+</td><td colspan="1" rowspan="1"><p><strong>450 / 450 (100%)</strong></p>
+</td></tr>
+</table>
+<p>Of these, 84 per path are <code>match_negated</code> (72 in cash flows, 12 in comprehensive income). <strong>No number on either path is a mismatch, a sign error or a scale error.</strong></p>
+<p class="image-container"><img alt="XBRL comparison, FY2025 income statement" src="img/eb77b6fa98d3f0c7.png"></p>
+<h2 is-upgraded>How we got there: two runs</h2>
+<p><strong>Run 1, automatic mapping only</strong> (the linkbase and fuzzy tiers, with a minimal curated map):</p>
+<table>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>Traditional</p>
+</td><td colspan="1" rowspan="1"><p>Docling</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>match</p>
+</td><td colspan="1" rowspan="1"><p>327</p>
+</td><td colspan="1" rowspan="1"><p>327</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>mismatch / scale error</p>
+</td><td colspan="1" rowspan="1"><p>0 / 0</p>
+</td><td colspan="1" rowspan="1"><p>0 / 0</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>sign</p>
+</td><td colspan="1" rowspan="1"><p>3</p>
+</td><td colspan="1" rowspan="1"><p>3</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>xbrl_missing</p>
+</td><td colspan="1" rowspan="1"><p>12</p>
+</td><td colspan="1" rowspan="1"><p>6</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>unmapped</p>
+</td><td colspan="1" rowspan="1"><p>114</p>
+</td><td colspan="1" rowspan="1"><p>114</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><strong>Match rate</strong></p>
+</td><td colspan="1" rowspan="1"><p><strong>72%</strong></p>
+</td><td colspan="1" rowspan="1"><p><strong>73%</strong></p>
+</td></tr>
+</table>
+<p>Every number that could be mapped was already correct. <strong>The gap was entirely mapping and lookup, not extraction.</strong> Every non-match was diagnosed:</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Cause</p>
+</td><td colspan="1" rowspan="1"><p>Example</p>
+</td><td colspan="1" rowspan="1"><p>Fix</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Same label on a balance concept and a change concept</p>
+</td><td colspan="1" rowspan="1"><p>&#34;Accounts payable&#34;: <code>AccountsPayableCurrent</code> vs <code>IncreaseDecreaseInAccountsPayable</code></p>
+</td><td colspan="1" rowspan="1"><p>disambiguate by period type</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Several concepts share a generic label</p>
+</td><td colspan="1" rowspan="1"><p>&#34;Other&#34; (3 lines in cash flows), &#34;Deferred revenue&#34;</p>
+</td><td colspan="1" rowspan="1"><p>curated entries</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Extension concept changed between filings</p>
+</td><td colspan="1" rowspan="1"><p>derivative lines tagged <code>aapl:...</code> in FY2024, <code>us-gaap:...CashFlowHedge...</code> in FY2025</p>
+</td><td colspan="1" rowspan="1"><p>curated entries list both; the one with a fact is used</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Printed label differs from every filing label</p>
+</td><td colspan="1" rowspan="1"><p>&#34;Total net sales&#34;, &#34;Total cost of sales&#34;</p>
+</td><td colspan="1" rowspan="1"><p>curated entries</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Instant concept inside a flow statement</p>
+</td><td colspan="1" rowspan="1"><p>beginning and ending cash looked up as one-year durations</p>
+</td><td colspan="1" rowspan="1"><p>use the concept&#39;s period type, and the prior year end for beginning balances</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Our own negation logic</p>
+</td><td colspan="1" rowspan="1"><p>R&amp;D flagged <code>sign</code> although the values were equal</p>
+</td><td colspan="1" rowspan="1"><p>compare the plain value first; accept the opposite sign only for negated presentations</p>
+</td></tr>
+</table>
+<p><strong>Run 2,</strong> after these fixes: 100% on both paths.</p>
+<h2 is-upgraded>Traditional vs Docling</h2>
+<p>Both paths extracted every number they found correctly. The difference is coverage: <strong>Docling&#39;s cash-flow tables lost the first row</strong> (&#34;Cash, cash equivalents, and restricted cash and cash equivalents, beginning balances&#34;) in both filings, 6 numbers. Its table model merged that row into the column header (<code>Years ended.September 27, 2025 $ 29,943</code> in one header cell), so the row&#39;s numbers never became data cells. The traditional path extracted the row in both filings.</p>
+<aside class="warning"><p> Limits: the curated map was built by diagnosing these two filings, so a new company or year would need the same diagnosis (the automatic tiers carried 73% of numbers on their own here). The statement of shareholders&#39; equity and the note tables are not validated. </p>
+</aside>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Summary and recommendations" duration="3">
+        <p><strong>Primary parsing path (Part 4).</strong> Keep the traditional pipeline (pdfplumber text, the Camelot hybrid extractor, LayoutParser routing) as the primary path. It has the lowest text error (WER 1.67% vs 6.32% for Docling), the highest numeric recall (99.48% vs 87.43%), and it matched XBRL on all 456 statement numbers. Use Docling as the fallback for side-by-side layouts, footnote separation, and as an independent second reading of the statements.</p>
+<p><strong>Formats (Part 6).</strong> JSONL is the source of truth: it keeps every field, including the page, bbox and raw and normalized cells, that validation and citation need. Markdown feeds Case Study 2: it answered retrieval questions as accurately as JSONL at about a fifth of the tokens, and every block keeps a provenance comment that leads back to its JSONL record.</p>
+<p><strong>Build vs buy (Parts 7 and 10).</strong> AWS Textract matched the open-source pipeline number for number on every page compared, and at list price it costs about $4,540 a year for 5,000 filings, against $6 to $155 a year of compute for the open-source paths. Keep it as an off-by-default, cached fallback, triggered by a validation failure rather than sent every page.</p>
+<p><strong>Reproducibility (Part 8).</strong> A fresh clone rebuilds everything with <code>dvc pull</code> and <code>dvc repro</code>, with no credentials, and every number in this Codelab traces back to a file in <code>reports/</code> or <code>data/</code>.</p>
+<h2 is-upgraded>Links</h2>
+<ul>
+<li>Repository: <a href="https://github.com/BigDataIA-Fall-26-Team-1/lantern" target="_blank">github.com/BigDataIA-Fall-26-Team-1/lantern</a></li>
+<li>Demo video: TODO</li>
+<li>Deployed app: <a href="http://52.15.107.141:8501/" target="_blank">http://52.15.107.141:8501/</a></li>
+</ul>
+
+
+      </google-codelab-step>
+    
+  </google-codelab>
+
+  <script src="https://storage.googleapis.com/claat-public/native-shim.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/custom-elements.min.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/prettify.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/codelab-elements.js"></script>
+  <script src="//support.google.com/inapp/api.js"></script>
+
+</body>
+</html>
