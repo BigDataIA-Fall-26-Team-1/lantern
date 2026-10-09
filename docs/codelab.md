@@ -387,42 +387,92 @@ Limits of this test: one model, two runs, one 4-page slice of statement pages, a
 ## Part 7: Build vs buy with AWS Textract
 Duration: 0:08:00
 
-The same pages were sent through AWS Textract (`AnalyzeDocument` with `TABLES`): a clean statement page and a page from the scanned fixture, well under the 10-page limit. Textract's output was mapped into the Part 5 schema and compared cell by cell with the open-source output.
+The same pages were sent through AWS Textract (`AnalyzeDocument` with `TABLES` and `LAYOUT`, region `us-east-1`): 7 of the 10 allowed pages. These were the FY2025 income statement (p32), the balance sheet (p34), the two tables that scored below `tables.accept_score` (p22, p47), and the three pages of the scanned fixture. Textract's output was mapped into the Part 5 schema and compared cell by cell with the open-source output.
 
 ### The fallback
-
-Textract is wired in as an optional fallback in `src/managed/`. It is used only when a page's OCR confidence or a table's score is low, and every response is cached by page hash in `data/managed/`.
 
 ```yaml
 managed:
   enabled: false
-  provider: textract
+  provider: aws-textract
+  region: us-east-1
 ```
 
-With `enabled: false` (the default) the code reads cache hits but never calls the API, so the pipeline runs without AWS credentials. The cache is a DVC-tracked folder, not a stage output:
+| Piece | What it does |
+|---|---|
+| `src/managed/fallback.py` | Called from `src/export.py` (tables) and `src/parse_text.py` (OCR). With `enabled: false` it reads cache hits and never calls the API |
+| `src/managed/mapper.py` | Maps Textract responses into schema records (bbox from page fractions to PDF points, top-left; tables through the Part 2 normalizer) |
+| `data/managed/` | The 7 raw responses, one JSON file each, keyed by a hash of (source PDF hash, page, provider, API, features) |
+| `data/managed.dvc` | Tracks the cache with `dvc add`. It is a cache, not a stage output |
+
+Every fallback decision is logged in `data/export/managed_fallback_log.csv` and `data/parsed/managed_fallback_log.csv`. Because the default is `enabled: false`, `dvc repro` runs without AWS credentials.
 
 ```bash
-dvc add data/managed      # already done; creates data/managed.dvc
-dvc pull data/managed.dvc # graders get the cached responses
-dvc repro                 # succeeds with the fallback disabled
+dvc pull data/managed.dvc
+ls data/managed
 ```
 
+![Cached Textract responses and the fallback log](img/p7-cache-hit.png)
+
+### Compare the two paths
+
+No API calls are needed; both commands work from the cache:
+
+```bash
+python -m src.managed.mapper
+python -m src.managed.compare
+ls reports/managed/
+```
+
+**Statement tables, cell by cell:**
+
+| Page | Open-source numeric cells | Textract numeric cells | Identical |
+|---|---|---|---|
+| FY2025 p32, income statement | 57 | 57 | 57 |
+| FY2025 p34, balance sheet | 54 | 54 | 54 |
+
+**OCR on the scanned fixture** (WER against the born-digital text of the same pages, after treating curly/straight quotes, dashes and ®/™/© as equal):
+
+| Scanned page | Tesseract WER | Textract WER | Numbers correct | Confidence (Tesseract / Textract) |
+|---|---|---|---|---|
+| 1 | 0.000 | 0.004 | both 100% | 95.4 / 99.1 |
+| 2 | 0.000 | 0.002 | both 100% | 95.7 / 99.8 |
+| 3 | 0.002 | 0.004 | both 100% | 95.5 / 99.7 |
+
+Textract reported higher confidence, but Tesseract was at least as accurate, so confidence thresholds have to be calibrated per engine.
+
+**The two low-score tables the fallback replaced:**
+
+| Page | Camelot (best attempt) | Textract | Values correct |
+|---|---|---|---|
+| p22, share repurchases | `camelot-network`, score 78.46: headers split over 6 rows, top header lines cut off | complete one-row headers | 11/11 both |
+| p47, term debt | `camelot-stream`, score 72.69: an extra first row from the sentence above the table | no extra row, headers merged | 21/21 both |
+
+The fallback fixed table structure, not numbers. A low Camelot score did not mean wrong values.
+
+![Camelot vs Textract, p22 share repurchases](img/p7-side-by-side.png)
+
+### Cost
+
+From AWS's Textract pricing page (checked 2026-10-07): Tables at $0.015 per page for the first 1 million pages a month, with Layout free alongside Tables.
+
+| Volume | Pages | Textract, Tables + Layout |
+|---|---|---|
+| Our corpus (2 filings) | 121 | about $1.82 |
+| 5,000 filings a year, every page | about 302,500 a year | about $4,540 a year |
+| 5,000 filings a year, fallback only | at most about 50,000 a year | at most about $750 a year |
+
+### Data handling for client documents
+
+Public 10-Ks are low risk, but client documents would need answers first: whether content is used for training (and an AI-services opt-out in AWS Organizations), which region stores it, how long it is kept and how to delete it, which compliance standards the client requires, and a least-privilege IAM role with keys kept out of the repo. Details are in `reports/build_vs_buy.md`.
+
+### Recommendation
+
+Keep the open-source pipeline as the primary path. Textract matched it number for number on every page compared, and its one measurable benefit was cleaner table structure on two tables whose numbers were already right. Keep Textract as the optional, cached fallback, off by default, and trigger it from a validation failure (an XBRL mismatch in Part 11) rather than from Camelot's score alone.
+
 <aside class="negative">
-Live calls need AWS credentials in environment variables or an AWS profile, never in the repo. They use a separate IAM user with Textract permissions only, kept apart from the DVC remote user. A billing alert was set before the first call.
+Limits: seven pages, one company, one provider. The scan is a clean 300 DPI rasterization; degraded scans, where a managed service usually helps most, were not tested.
 </aside>
-
-### Check the results
-
-TODO: results from `reports/managed/` and `reports/build_vs_buy.md`.
-
-- Side-by-side: one page of text and one table, Textract vs open source; which errors Textract fixed and which it introduced
-- Price per 1,000 pages from the AWS public pricing page (date checked), cost for this corpus and for 5,000 filings a year
-- Data-handling questions for client documents: region, retention, training use
-- Recommendation: whether and where to use a managed service
-
-![Textract vs open source, one table](img/p7-side-by-side.png)
-
-![Cache hit with managed.enabled false](img/p7-cache-hit.png)
 
 ## Part 8: DVC pipeline and CI
 Duration: 0:05:00
