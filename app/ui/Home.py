@@ -5,7 +5,6 @@ from lantern_api import get
 
 st.set_page_config(page_title="LANTERN", layout="wide")
 st.title("Project LANTERN")
-st.caption("Read-only viewer over the DVC pipeline outputs: data/export, data/rendered and reports/.")
 
 LINKS = {
     "Repository": "https://github.com/BigDataIA-Fall-26-Team-1/lantern",
@@ -35,9 +34,20 @@ for col, f in zip(cols, filings):
     col.metric("Pages", f["n_pages"])
     col.metric("Records", f["n_records"])
 
-st.subheader("Records by block type")
-bt = pd.DataFrame({f["stem"]: f["block_types"] for f in filings}).fillna(0).astype(int)
-st.bar_chart(bt)
+st.subheader("What was extracted")
+st.caption("Each record is one block the layout model found on a page: "
+           "Text = paragraphs, Title = headings, Table = tables (cells extracted into rows and columns), "
+           "List = bullet lists, Figure = images.")
+
+order = ["Text", "Title", "Table", "List", "Figure", "Footnote"]
+names = {f["stem"]: f"{f['manifest'].get('form', '')} ({str(f['manifest'].get('period', ''))[:4]})"
+         for f in filings}
+bt = (pd.DataFrame({names[f["stem"]]: f["block_types"] for f in filings})
+      .fillna(0).astype(int))
+bt = bt.reindex([t for t in order if t in bt.index] + [t for t in bt.index if t not in order])
+bt.loc["Total"] = bt.sum()
+bt.index.name = "Block type"
+st.dataframe(bt)
 
 st.subheader("Manifest")
 st.dataframe(pd.DataFrame([f.get("manifest", {}) for f in filings]).astype(str))

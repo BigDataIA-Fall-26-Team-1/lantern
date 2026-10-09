@@ -27,7 +27,7 @@ def block_label(bid):
         return "(none)"
     r = by_id[bid]
     preview = (r.get("text") or "").strip().replace("\n", " ")[:50]
-    return f"{r.get('block_type')} · {preview or '(no text)'}  [{bid}]"
+    return f"{r.get('block_type')} · {preview or '(no text)'}"
 
 
 pick = st.selectbox("Highlight block", ["(none)"] + list(by_id),

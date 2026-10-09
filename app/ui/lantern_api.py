@@ -52,3 +52,11 @@ def crop_around(img, bbox, pad_pt=20):
     x0, top, x1, bottom = bbox
     return img.crop((max(0, (x0 - pad_pt) * k), max(0, (top - pad_pt) * k),
                      min(img.width, (x1 + pad_pt) * k), min(img.height, (bottom + pad_pt) * k)))
+
+def block_address(bid):
+    """p0032_b003 -> 'p0032_b003 (page 32, block 3 on that page)'."""
+    try:
+        page, n = bid.split("_b")
+        return f"{bid} (page {int(page[1:])}, block {int(n)} on that page)"
+    except (ValueError, AttributeError):
+        return str(bid)

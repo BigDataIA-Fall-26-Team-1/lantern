@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from lantern_api import crop_around, get, page_with_boxes
+from lantern_api import block_address, crop_around, get, page_with_boxes
 
 st.set_page_config(page_title="Trace a fact", layout="wide")
 st.title("Trace a fact")
@@ -30,7 +30,7 @@ def hit_label(i):
     x = hits[i]
     where = f"{x['stem']} · " if scope == "(all)" else ""
     return (f"{where}Page {x['page']} · {x['block_type']} · "
-            f"{x.get('context') or '(no heading on page)'}  [{x['block_id']}]")
+            f"{x.get('context') or '(no heading on page)'}")
 
 
 h = hits[st.selectbox("Trace this hit", range(len(hits)), format_func=hit_label,
@@ -39,6 +39,8 @@ h = hits[st.selectbox("Trace this hit", range(len(hits)), format_func=hit_label,
 
 t = get(f"/filings/{h['stem']}/records/{h['block_id']}")
 rec = t["record"]
+st.caption(f"Record address: {block_address(rec['block_id'])}. The same ID appears in the "
+           "JSONL record and in the Markdown provenance comment below.")
 page_recs = get(f"/filings/{h['stem']}/pages/{rec['page']}/records") or []
 img = page_with_boxes(h["stem"], rec["page"], page_recs, rec["block_id"])
 

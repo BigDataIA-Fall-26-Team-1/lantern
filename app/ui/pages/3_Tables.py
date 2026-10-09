@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from lantern_api import get
+from lantern_api import block_address, get
 
 st.set_page_config(page_title="Tables", layout="wide")
 st.title("Tables")
@@ -27,8 +27,7 @@ if not tbls:
 
 def table_label(i):
     x = tbls[i]
-    return (f"Page {x['record']['page']} · {x.get('context') or '(no heading on page)'}"
-            f"  [{x['record']['block_id']}]")
+    return f"Page {x['record']['page']}"
 
 
 i = pick_col2.selectbox("Table", range(len(tbls)), format_func=table_label,
@@ -36,6 +35,7 @@ i = pick_col2.selectbox("Table", range(len(tbls)), format_func=table_label,
 r, ctx = tbls[i]["record"], tbls[i].get("context")
 t = r["table"]
 st.subheader(ctx or f"Table on page {r['page']}")
+st.caption(f"Record address: {block_address(r['block_id'])}")
 scale = t.get("scale")
 if isinstance(scale, dict):
     scale_txt = " · ".join(f"{k.replace('_', '-')} ×{v:,.0f}" for k, v in scale.items())
