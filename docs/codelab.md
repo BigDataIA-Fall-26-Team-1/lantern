@@ -319,28 +319,70 @@ python -c "import pdfplumber; pdf=pdfplumber.open('data/rendered/AAPL_10K_202509
 ![bbox highlighted on the rendered page](img/p5-bbox-highlight.png)
 
 ## Part 6: Storage formats
-Duration: 0:05:00
+Duration: 0:06:00
 
-One filing is exported in three formats: JSONL and Markdown from Part 5, plus a plain-text baseline at `data/export/{stem}.txt`. Each was measured for size and approximate tokens (characters / 4), and the same three retrieval-style questions were asked of each in an LLM chat interface.
+The `export` stage writes every filing in three formats from the same validated records, so they never disagree about content. They differ only in what they keep.
 
-### Check the results
+| Role | Format | File |
+|---|---|---|
+| Source of truth | JSONL | `data/export/{stem}.jsonl` |
+| Feeds Case Study 2 (retrieval and question answering) | Markdown, generated from the JSONL records and never edited by hand | `data/export/{stem}.md` |
+| Baseline only | TXT | `data/export/{stem}.txt` |
+
+### Measure size and token cost
 
 ```bash
-column -s, -t < reports/format_stats.csv
-ls reports/format_test/
+python -m src.format_stats
+cat reports/format_stats.csv
 ```
 
-TODO: copy the numbers from `reports/format_stats.csv` and the answers from `reports/format_test/`.
+This writes `reports/format_stats.csv` and cuts a 4-page test slice (FY2025 PDF pages 31 to 34: the Item 8 heading, statement index, income statement, comprehensive income and balance sheet) into `reports/format_test/`. Tokens are approximated as characters / 4.
 
-| Format | Size | Approx. tokens | Q1 | Q2 | Q3 |
-|---|---|---|---|---|---|
-| JSONL | | | | | |
-| Markdown | | | | | |
-| TXT | | | | | |
+| Scope | Format | Bytes | Approx. tokens | vs TXT |
+|---|---|---|---|---|
+| FY2025 full filing | JSONL | 795,499 | 198,384 | 3.9× |
+| | Markdown | 249,975 | 62,062 | 1.2× |
+| | TXT | 207,509 | 51,446 | 1.0× |
+| FY2024 full filing | JSONL | 811,191 | 202,352 | 4.0× |
+| | Markdown | 248,304 | 61,669 | 1.2× |
+| | TXT | 204,869 | 50,810 | 1.0× |
+| FY2025 pages 31–34 | JSONL | 30,565 | 7,635 | 6.4× |
+| | Markdown | 6,449 | 1,610 | 1.4× |
+| | TXT | 4,771 | 1,190 | 1.0× |
 
-TODO: the decision in two sentences, from `reports/format_decision.md`: which format is the source of truth, which feeds Case Study 2, and why.
+JSONL costs about 4× the tokens of plain text for a whole filing, and 6.4× on statement pages, where every table is stored twice (raw and normalized) with its metadata fields. Markdown costs 20 to 40% more than plain text while keeping the Item headings, the tables and a provenance comment before every block.
 
-![Question asked of the Markdown export](img/p6-question.png)
+### Ask the same three questions of each format
+
+The same slice was given to the same model in a new chat per format, with a prompt that said to use only the document. Scoring rules were fixed before any answer was seen. Answers are recorded word for word in `reports/format_test/llm_answers.md`.
+
+| Question | Tests | Correct answer |
+|---|---|---|
+| Q1. Net income in the latest fiscal year, and on which page? | provenance | $112,010 million; PDF page 32 (printed page 29) |
+| Q2. "Other income/(expense), net" in fiscal 2023: income or expense? | sign, table structure | $(565) million, an expense |
+| Q3. Which Item has the balance sheets; total assets at the end of fiscal 2025? | section, number | Item 8; $359,241 million |
+
+| Format | Scored run | Where the Q1 page came from |
+|---|---|---|
+| JSONL | 3 / 3 | the `page` field, plus the footer record for the printed page |
+| Markdown | 3 / 3 | the provenance comment `p32` |
+| TXT | 2 / 3 + 1 partial | matching detached page numbers to statement titles by order; the answer changed between runs |
+
+All three formats got every number and sign right. The difference is how well each answer is grounded: JSONL and Markdown gave the page from explicit markers, while TXT had to guess.
+
+![Scored results of the format test, Run 2](img/p6-question.png)
+
+### The decision
+
+JSONL is the source of truth. It is the only format that keeps every field (page, bbox, block id, extractor version, raw and normalized cells, sha256), and Part 11 and any Case Study 2 citation need those fields. At about 200,000 tokens per filing, it is too expensive as LLM context.
+
+Markdown feeds Case Study 2. It answered as accurately as JSONL at about a fifth of the tokens on the slice, its `## Item` headings let text be split by section, and every block keeps its `<!-- doc_id pN block_id -->` comment, which leads back to the JSONL record and its bbox.
+
+TXT is kept only as a baseline, to show what the structure in the other two formats is worth.
+
+<aside class="negative">
+Limits of this test: one model, two runs, one 4-page slice of statement pages, and lookup questions whose answers appear in all three formats. Token counts are characters / 4, not a real tokenizer. Full details are in <code>reports/format_decision.md</code>.
+</aside>
 
 ## Part 7: Build vs buy with AWS Textract
 Duration: 0:08:00

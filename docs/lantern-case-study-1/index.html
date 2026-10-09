@@ -355,30 +355,134 @@ ls data/parsed/AAPL_10K_20250927_p*.txt | wc -l
 
       </google-codelab-step>
     
-      <google-codelab-step label="Part 6: Storage formats" duration="5">
-        <p>One filing is exported in three formats: JSONL and Markdown from Part 5, plus a plain-text baseline at <code>data/export/{stem}.txt</code>. Each was measured for size and approximate tokens (characters / 4), and the same three retrieval-style questions were asked of each in an LLM chat interface.</p>
-<h2 is-upgraded>Check the results</h2>
-<pre><code language="language-bash" class="language-bash">column -s, -t &lt; reports/format_stats.csv
-ls reports/format_test/
+      <google-codelab-step label="Part 6: Storage formats" duration="6">
+        <p>The <code>export</code> stage writes every filing in three formats from the same validated records, so they never disagree about content. They differ only in what they keep.</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Role</p>
+</td><td colspan="1" rowspan="1"><p>Format</p>
+</td><td colspan="1" rowspan="1"><p>File</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Source of truth</p>
+</td><td colspan="1" rowspan="1"><p>JSONL</p>
+</td><td colspan="1" rowspan="1"><p><code>data/export/{stem}.jsonl</code></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Feeds Case Study 2 (retrieval and question answering)</p>
+</td><td colspan="1" rowspan="1"><p>Markdown, generated from the JSONL records and never edited by hand</p>
+</td><td colspan="1" rowspan="1"><p><code>data/export/{stem}.md</code></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Baseline only</p>
+</td><td colspan="1" rowspan="1"><p>TXT</p>
+</td><td colspan="1" rowspan="1"><p><code>data/export/{stem}.txt</code></p>
+</td></tr>
+</table>
+<h2 is-upgraded>Measure size and token cost</h2>
+<pre><code language="language-bash" class="language-bash">python -m src.format_stats
+cat reports/format_stats.csv
 </code></pre>
-<p>TODO: copy the numbers from <code>reports/format_stats.csv</code> and the answers from <code>reports/format_test/</code>.</p>
+<p>This writes <code>reports/format_stats.csv</code> and cuts a 4-page test slice (FY2025 PDF pages 31 to 34: the Item 8 heading, statement index, income statement, comprehensive income and balance sheet) into <code>reports/format_test/</code>. Tokens are approximated as characters / 4.</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Scope</p>
+</td><td colspan="1" rowspan="1"><p>Format</p>
+</td><td colspan="1" rowspan="1"><p>Bytes</p>
+</td><td colspan="1" rowspan="1"><p>Approx. tokens</p>
+</td><td colspan="1" rowspan="1"><p>vs TXT</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>FY2025 full filing</p>
+</td><td colspan="1" rowspan="1"><p>JSONL</p>
+</td><td colspan="1" rowspan="1"><p>795,499</p>
+</td><td colspan="1" rowspan="1"><p>198,384</p>
+</td><td colspan="1" rowspan="1"><p>3.9×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>Markdown</p>
+</td><td colspan="1" rowspan="1"><p>249,975</p>
+</td><td colspan="1" rowspan="1"><p>62,062</p>
+</td><td colspan="1" rowspan="1"><p>1.2×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>TXT</p>
+</td><td colspan="1" rowspan="1"><p>207,509</p>
+</td><td colspan="1" rowspan="1"><p>51,446</p>
+</td><td colspan="1" rowspan="1"><p>1.0×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>FY2024 full filing</p>
+</td><td colspan="1" rowspan="1"><p>JSONL</p>
+</td><td colspan="1" rowspan="1"><p>811,191</p>
+</td><td colspan="1" rowspan="1"><p>202,352</p>
+</td><td colspan="1" rowspan="1"><p>4.0×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>Markdown</p>
+</td><td colspan="1" rowspan="1"><p>248,304</p>
+</td><td colspan="1" rowspan="1"><p>61,669</p>
+</td><td colspan="1" rowspan="1"><p>1.2×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>TXT</p>
+</td><td colspan="1" rowspan="1"><p>204,869</p>
+</td><td colspan="1" rowspan="1"><p>50,810</p>
+</td><td colspan="1" rowspan="1"><p>1.0×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>FY2025 pages 31–34</p>
+</td><td colspan="1" rowspan="1"><p>JSONL</p>
+</td><td colspan="1" rowspan="1"><p>30,565</p>
+</td><td colspan="1" rowspan="1"><p>7,635</p>
+</td><td colspan="1" rowspan="1"><p>6.4×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>Markdown</p>
+</td><td colspan="1" rowspan="1"><p>6,449</p>
+</td><td colspan="1" rowspan="1"><p>1,610</p>
+</td><td colspan="1" rowspan="1"><p>1.4×</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>TXT</p>
+</td><td colspan="1" rowspan="1"><p>4,771</p>
+</td><td colspan="1" rowspan="1"><p>1,190</p>
+</td><td colspan="1" rowspan="1"><p>1.0×</p>
+</td></tr>
+</table>
+<p>JSONL costs about 4× the tokens of plain text for a whole filing, and 6.4× on statement pages, where every table is stored twice (raw and normalized) with its metadata fields. Markdown costs 20 to 40% more than plain text while keeping the Item headings, the tables and a provenance comment before every block.</p>
+<h2 is-upgraded>Ask the same three questions of each format</h2>
+<p>The same slice was given to the same model in a new chat per format, with a prompt that said to use only the document. Scoring rules were fixed before any answer was seen. Answers are recorded word for word in <code>reports/format_test/llm_answers.md</code>.</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Question</p>
+</td><td colspan="1" rowspan="1"><p>Tests</p>
+</td><td colspan="1" rowspan="1"><p>Correct answer</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Q1. Net income in the latest fiscal year, and on which page?</p>
+</td><td colspan="1" rowspan="1"><p>provenance</p>
+</td><td colspan="1" rowspan="1"><p>$112,010 million; PDF page 32 (printed page 29)</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Q2. &#34;Other income/(expense), net&#34; in fiscal 2023: income or expense?</p>
+</td><td colspan="1" rowspan="1"><p>sign, table structure</p>
+</td><td colspan="1" rowspan="1"><p>$(565) million, an expense</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Q3. Which Item has the balance sheets; total assets at the end of fiscal 2025?</p>
+</td><td colspan="1" rowspan="1"><p>section, number</p>
+</td><td colspan="1" rowspan="1"><p>Item 8; $359,241 million</p>
+</td></tr>
+</table>
 <table>
 <tr><td colspan="1" rowspan="1"><p>Format</p>
-</td><td colspan="1" rowspan="1"><p>Size</p>
-</td><td colspan="1" rowspan="1"><p>Approx. tokens</p>
-</td><td colspan="1" rowspan="1"><p>Q1</p>
-</td><td colspan="1" rowspan="1"><p>Q2</p>
-</td><td colspan="1" rowspan="1"><p>Q3</p>
+</td><td colspan="1" rowspan="1"><p>Scored run</p>
+</td><td colspan="1" rowspan="1"><p>Where the Q1 page came from</p>
 </td></tr>
-<tr><td colspan="6" rowspan="1"><p>JSONL</p>
-</td><td colspan="5" rowspan="1"></td><td colspan="4" rowspan="1"></td><td colspan="3" rowspan="1"></td><td colspan="2" rowspan="1"></td><td colspan="1" rowspan="1"></td></tr>
-<tr><td colspan="6" rowspan="1"><p>Markdown</p>
-</td><td colspan="5" rowspan="1"></td><td colspan="4" rowspan="1"></td><td colspan="3" rowspan="1"></td><td colspan="2" rowspan="1"></td><td colspan="1" rowspan="1"></td></tr>
-<tr><td colspan="6" rowspan="1"><p>TXT</p>
-</td><td colspan="5" rowspan="1"></td><td colspan="4" rowspan="1"></td><td colspan="3" rowspan="1"></td><td colspan="2" rowspan="1"></td><td colspan="1" rowspan="1"></td></tr>
+<tr><td colspan="1" rowspan="1"><p>JSONL</p>
+</td><td colspan="1" rowspan="1"><p>3 / 3</p>
+</td><td colspan="1" rowspan="1"><p>the <code>page</code> field, plus the footer record for the printed page</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>Markdown</p>
+</td><td colspan="1" rowspan="1"><p>3 / 3</p>
+</td><td colspan="1" rowspan="1"><p>the provenance comment <code>p32</code></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>TXT</p>
+</td><td colspan="1" rowspan="1"><p>2 / 3 + 1 partial</p>
+</td><td colspan="1" rowspan="1"><p>matching detached page numbers to statement titles by order; the answer changed between runs</p>
+</td></tr>
 </table>
-<p>TODO: the decision in two sentences, from <code>reports/format_decision.md</code>: which format is the source of truth, which feeds Case Study 2, and why.</p>
-<p class="image-container"><img alt="Question asked of the Markdown export" src="img/f2eaea242fe1e15a.png"></p>
+<p>All three formats got every number and sign right. The difference is how well each answer is grounded: JSONL and Markdown gave the page from explicit markers, while TXT had to guess.</p>
+<p class="image-container"><img alt="Scored results of the format test, Run 2" src="img/a5e47fd1fbc666eb.png"></p>
+<h2 is-upgraded>The decision</h2>
+<p>JSONL is the source of truth. It is the only format that keeps every field (page, bbox, block id, extractor version, raw and normalized cells, sha256), and Part 11 and any Case Study 2 citation need those fields. At about 200,000 tokens per filing, it is too expensive as LLM context.</p>
+<p>Markdown feeds Case Study 2. It answered as accurately as JSONL at about a fifth of the tokens on the slice, its <code>## Item</code> headings let text be split by section, and every block keeps its <code><!-- doc_id pN block_id --></code> comment, which leads back to the JSONL record and its bbox.</p>
+<p>TXT is kept only as a baseline, to show what the structure in the other two formats is worth.</p>
+<aside class="warning"><p> Limits of this test: one model, two runs, one 4-page slice of statement pages, and lookup questions whose answers appear in all three formats. Token counts are characters / 4, not a real tokenizer. Full details are in <code>reports/format_decision.md</code>. </p>
+</aside>
 
 
       </google-codelab-step>
