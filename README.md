@@ -4,6 +4,33 @@
 
 TODO
 
+## Deployed app
+
+**URL:** http://52.15.107.141:8501 (Streamlit UI; the FastAPI backend runs on the same server, bound to localhost only)
+
+The app is a read-only viewer over the pipeline outputs. It runs no pipeline stages and calls no paid APIs.
+
+| Page | What it shows |
+|---|---|
+| Home | The two filings from `manifest.csv`, page and record counts, records by block type |
+| Explorer | Any rendered page with every block's bbox drawn on it, and the page's JSONL records |
+| Trace | Search a value or phrase and follow it to the page, the bbox, the JSONL record and the Markdown line with its provenance comment |
+| Tables | Each extracted table: normalized values next to the raw cell strings, with extractor and scale |
+| Reports | Every file in `reports/`, grouped by Part |
+
+**Architecture:** one EC2 instance (Ubuntu 24.04, us-east-2, same region as the DVC remote). systemd runs two services: `lantern-api` (FastAPI, `app/api/main.py`, 127.0.0.1:8000) and `lantern-ui` (Streamlit, `app/ui/`, port 8501). No load balancer or NAT gateway. The security group allows port 8501 from anywhere and SSH from one IP.
+
+**Data:** the server runs `dvc pull data/export data/rendered` from the public read-only DVC remote, so it holds no AWS or GitHub credentials.
+
+**Deploying:** the org disables GitHub deploy keys, so code is copied from a clean local checkout with `rsync` (excluding `.venv/`, `data/`, the DVC cache and `.env`).
+1. First time, on the server: `bash deploy/setup.sh` (installs Python 3.11, the app packages from `app/requirements-app.txt`, pulls the data, starts both services).
+2. Updates: check out the branch or tag locally, re-run the rsync, then on the server run `bash deploy/update.sh`. It prints the deployed commit.
+
+**Running locally:**
+    pip install -r app/requirements-app.txt
+    uvicorn app.api.main:app --port 8000
+    LANTERN_API=http://127.0.0.1:8000 streamlit run app/ui/Home.py
+
 ## Architecture Diagram
 
 TODO
