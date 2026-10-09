@@ -180,8 +180,8 @@ stages:
       nfiles: 3
     - path: src/docling_parse.py
       hash: md5
-      md5: ddf94b187775cb3a1b774f7ca69480a4
-      size: 11474
+      md5: e84401b943eb2be0092a1f4dffd13474
+      size: 11470
     params:
       params.yaml:
         docling:
@@ -191,8 +191,8 @@ stages:
     outs:
     - path: data/docling
       hash: md5
-      md5: 0a9f1afa0932dd8597e0c0f8b00ff3af.dir
-      size: 18757654
+      md5: 5ef741e98343e47fa46ca455e8c02d01.dir
+      size: 18766220
       nfiles: 294
   layout:
     cmd: python src/layout.py --input data/rendered --output data/layout 
@@ -413,3 +413,294 @@ stages:
       md5: aa8284213004dae01822b3b4f47ade41.dir
       size: 2519189
       nfiles: 7
+  xbrl:
+    cmd: python src/xbrl.py
+    deps:
+    - path: config/label_map.yaml
+      hash: md5
+      md5: fbdf3f4563e96dff38d9e18ae10bcc5f
+      size: 3502
+    - path: data/docling
+      hash: md5
+      md5: 5ef741e98343e47fa46ca455e8c02d01.dir
+      size: 18766220
+      nfiles: 294
+    - path: data/parsed
+      hash: md5
+      md5: 60d480cc629c17622fdf54c1c5bd3132.dir
+      size: 14171803
+      nfiles: 125
+    - path: data/raw
+      hash: md5
+      md5: 9f9f4e754120a177f3fd21d3b586085b.dir
+      size: 37348782
+      nfiles: 181
+    - path: data/rendered
+      hash: md5
+      md5: aeecdd5e3b8417e02d7a02b5615fa96f.dir
+      size: 1106429
+      nfiles: 3
+    - path: data/tables
+      hash: md5
+      md5: 97bd0b285c54dc5e3fff61c9c742c97a.dir
+      size: 40732
+      nfiles: 22
+    - path: src/evaluate.py
+      hash: md5
+      md5: 6a0806497e1a5a3b4daee41ca1a9a045
+      size: 15414
+    - path: src/tables.py
+      hash: md5
+      md5: 17a13a09cd299b5d9b958c1445bb3803
+      size: 21383
+    - path: src/xbrl.py
+      hash: md5
+      md5: a4466dc12921dd407ef0cb33615efe7e
+      size: 19690
+    params:
+      params.yaml:
+        tables:
+          min_rulings: 6
+          accept_score: 80
+          statements:
+            income:
+            - CONSOLIDATED STATEMENTS OF OPERATIONS
+            comprehensive_income:
+            - CONSOLIDATED STATEMENTS OF COMPREHENSIVE INCOME
+            balance:
+            - CONSOLIDATED BALANCE SHEETS
+            equity:
+            - CONSOLIDATED STATEMENTS OF SHAREHOLDERS
+            cash_flows:
+            - CONSOLIDATED STATEMENTS OF CASH FLOWS
+          title_top_lines: 6
+          min_numeric_tokens: 20
+          title_max_extra_chars: 15
+          rule_min_len_pt: 100
+          order_ruled:
+          - lattice
+          - network
+          - stream
+          order_borderless:
+          - stream
+          - network
+          - lattice
+          whitespace_weight: 0.5
+          min_rows: 5
+          min_cols: 3
+          min_coverage: 0.5
+          max_label_merge: 0.2
+          bakeoff_flavors:
+          - lattice
+          - stream
+          - network
+          - hybrid
+          run_bakeoff: true
+          scale_words:
+            thousands: 1000
+            millions: 1000000
+            billions: 1000000000
+          shares_pattern: shares used|weighted.average.*shares|number of shares
+          per_share_pattern: per share|per-share
+        xbrl:
+          label_map: config/label_map.yaml
+          fuzzy_cutoff: 0.88
+          statements:
+          - income
+          - comprehensive_income
+          - balance
+          - cash_flows
+    outs:
+    - path: data/xbrl
+      hash: md5
+      md5: c3d1f4b83ffae3032fb754ed59d7ea1e.dir
+      size: 478660
+      nfiles: 3
+  evaluate:
+    cmd: python src/evaluate.py --out reports --fixtures-gt tests/fixtures/gt 
+      --fixtures-parsed data/fixtures/parsed --fixtures-layout 
+      data/fixtures/layout --fixtures-docling data/fixtures/docling
+    deps:
+    - path: data/docling
+      hash: md5
+      md5: 5ef741e98343e47fa46ca455e8c02d01.dir
+      size: 18766220
+      nfiles: 294
+    - path: data/fixtures
+      hash: md5
+      md5: a74f4385fa19ace722015b1ee3329e58.dir
+      size: 914600
+      nfiles: 32
+    - path: data/ground_truth
+      hash: md5
+      md5: 6dabd11bece189c994d20a28d1d61def.dir
+      size: 58339
+      nfiles: 24
+    - path: data/layout
+      hash: md5
+      md5: 50fc88b6ca1fdd84c21ab3088e2597bd.dir
+      size: 1158924
+      nfiles: 3
+    - path: data/parsed
+      hash: md5
+      md5: 60d480cc629c17622fdf54c1c5bd3132.dir
+      size: 14171803
+      nfiles: 125
+    - path: data/tables
+      hash: md5
+      md5: 97bd0b285c54dc5e3fff61c9c742c97a.dir
+      size: 40732
+      nfiles: 22
+    - path: src/evaluate.py
+      hash: md5
+      md5: 6a0806497e1a5a3b4daee41ca1a9a045
+      size: 15414
+    - path: src/tables.py
+      hash: md5
+      md5: 17a13a09cd299b5d9b958c1445bb3803
+      size: 21383
+    - path: tests/fixtures/gt
+      hash: md5
+      md5: b895cbce4b7ac7677cc21bd5cebe6c25.dir
+      size: 10828
+      nfiles: 6
+    outs:
+    - path: reports/eval_pages.csv
+      hash: md5
+      md5: 3ac3521ef552693e42f06de2c7e3ad8d
+      size: 3817
+    - path: reports/eval_tables.csv
+      hash: md5
+      md5: 75c796bba5204bbdc3b724ba576cbd5a
+      size: 450
+    - path: reports/metrics.json
+      hash: md5
+      md5: c1a782d8643b171b5349e195e2bb76ac
+      size: 2513
+  parse_fixtures:
+    cmd: python src/parse_text.py --input tests/fixtures --output 
+      data/fixtures/parsed && python src/layout.py --input tests/fixtures 
+      --output data/fixtures/layout --figures data/fixtures/figures && python -m
+      src.docling_parse --input tests/fixtures --output data/fixtures/docling 
+      --raw tests/fixtures/no_raw --manifest 
+      tests/fixtures/manifest_fixtures.csv
+    deps:
+    - path: src/docling_parse.py
+      hash: md5
+      md5: e84401b943eb2be0092a1f4dffd13474
+      size: 11470
+    - path: src/layout.py
+      hash: md5
+      md5: 1d0f04ad871bcbb61d7741245c642d57
+      size: 26095
+    - path: src/parse_text.py
+      hash: md5
+      md5: 148f3bfaf1db5e28e443864321d1133a
+      size: 12235
+    - path: src/tables.py
+      hash: md5
+      md5: 17a13a09cd299b5d9b958c1445bb3803
+      size: 21383
+    - path: tests/fixtures/manifest_fixtures.csv
+      hash: md5
+      md5: 4044884473425a35435fc1010f74706d
+      size: 120
+    - path: tests/fixtures/multicol.pdf
+      hash: md5
+      md5: 462abe593e30d33e5da64d6c9c2d2a03
+      size: 2605974
+    - path: tests/fixtures/scanned.pdf
+      hash: md5
+      md5: 0e1c3d50f0f59ec6cb6c334067a2a077
+      size: 1570729
+    - path: tests/fixtures/statement.pdf
+      hash: md5
+      md5: 3e5efaf5d066897cce91e9223863446e
+      size: 559164
+    params:
+      params.yaml:
+        docling:
+          do_ocr: false
+          table_mode: accurate
+          html_stem: AAPL_10K_20240928
+        layout:
+          model: lp://efficientdet/PubLayNet
+          score_threshold: 0.25
+          pad_pt: 8
+          model_name: tf_efficientdet_d0
+          hf_repo: layoutparser/efficientdet
+          hf_file: 
+            PubLayNet/tf_efficientdet_d0/publaynet-tf_efficientdet_d0.pth.tar
+          table_min_cols: 2
+          table_min_coverage: 0.3
+          table_region_overlap: 0.8
+          table_snap_pt: 40
+          text_snap_pt: 15
+          dpi: 150
+          duplicate_cover_ratio: 0.6
+          inside_table_ratio: 0.8
+          full_width_ratio: 0.6
+          table_min_rows: 2
+          fallback_y_tol_pt: 3
+          fallback_word_gap_pt: 20
+          fallback_line_gap_pt: 6
+          fallback_min_chars: 3
+          tesseract_config: --oem 1 --psm 6
+        ocr:
+          min_chars: 50
+          junk_ratio: 0.3
+          dpi: 300
+          image_coverage: 0.6
+          tesseract_config: --oem 1 --psm 6
+        tables:
+          min_rulings: 6
+          accept_score: 80
+          statements:
+            income:
+            - CONSOLIDATED STATEMENTS OF OPERATIONS
+            comprehensive_income:
+            - CONSOLIDATED STATEMENTS OF COMPREHENSIVE INCOME
+            balance:
+            - CONSOLIDATED BALANCE SHEETS
+            equity:
+            - CONSOLIDATED STATEMENTS OF SHAREHOLDERS
+            cash_flows:
+            - CONSOLIDATED STATEMENTS OF CASH FLOWS
+          title_top_lines: 6
+          min_numeric_tokens: 20
+          title_max_extra_chars: 15
+          rule_min_len_pt: 100
+          order_ruled:
+          - lattice
+          - network
+          - stream
+          order_borderless:
+          - stream
+          - network
+          - lattice
+          whitespace_weight: 0.5
+          min_rows: 5
+          min_cols: 3
+          min_coverage: 0.5
+          max_label_merge: 0.2
+          bakeoff_flavors:
+          - lattice
+          - stream
+          - network
+          - hybrid
+          run_bakeoff: true
+          scale_words:
+            thousands: 1000
+            millions: 1000000
+            billions: 1000000000
+          shares_pattern: shares used|weighted.average.*shares|number of shares
+          per_share_pattern: per share|per-share
+        text:
+          x_tolerance: 1.5
+          y_tolerance: 3
+    outs:
+    - path: data/fixtures
+      hash: md5
+      md5: a74f4385fa19ace722015b1ee3329e58.dir
+      size: 914600
+      nfiles: 32

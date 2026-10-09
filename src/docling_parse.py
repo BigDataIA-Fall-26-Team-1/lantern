@@ -133,7 +133,7 @@ def export_pdf(doc, stem: str, doc_id: str, out_dir: Path) -> dict:
     # 4) Per-page Markdown
     n_pages = len(doc.pages)
     for pg_no in range(1, n_pages + 1):
-        page_md = doc.export_to_markdown(page_no=pg_no - 1)
+        page_md = doc.export_to_markdown(page_no=pg_no)
         pg_path = out_dir / f"{stem}_pdf_p{pg_no:04d}.md"
         pg_path.write_text(page_md, encoding="utf-8", newline="\n")
 

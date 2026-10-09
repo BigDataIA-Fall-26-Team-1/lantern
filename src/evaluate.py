@@ -21,6 +21,13 @@ Predictions compared (each optional; a missing source is skipped):
     tables      {tables}/{stem}_p{NNNN}_{statement}.raw.csv      Part 2 chosen table (traditional)
                 {docling}/{stem}_pdf_p{NNNN}_t*.csv              Part 4 tables on that page
 
+Optional fixture strata (for page types the filings do not have):
+    --fixtures-gt tests/fixtures/gt --fixtures-parsed data/fixtures/parsed
+    --fixtures-layout data/fixtures/layout --fixtures-docling data/fixtures/docling
+    Only the strata in --fixture-strata (default: scanned, multicolumn) are scored, read
+    straight from the fixture answer keys; the statement fixture is FY2025 p32, which the
+    filing pages already cover. Off by default, so CI and the tests are unaffected.
+
 Outputs:
     {out}/metrics.json      summary per path, per stratum, per table source (DVC metric)
     {out}/eval_pages.csv    one row per page and text source
@@ -205,6 +212,24 @@ def prf(gt: dict, pred: dict) -> dict:
 # main
 # ---------------------------------------------------------------------------
 
+def score_text_pages(gt: Path, pages: list[dict], dirs: dict) -> list[dict]:
+    """WER, CER and numeric recall for every listed page and every available text source."""
+    rows = []
+    for pg in pages:
+        ref_path = gt / "text" / f"{pg['stem']}_p{pg['page']:04d}.txt"
+        if not ref_path.exists():
+            print(f"[WARN] no ground truth text for {ref_path}, skipped")
+            continue
+        ref = normalize_text(ref_path.read_text(encoding="utf-8"))
+        for source, hyp_raw in read_text_sources(pg["stem"], pg["page"], dirs).items():
+            hyp = normalize_text(hyp_raw)
+            w, c = wer_cer(ref, hyp)
+            rows.append({**pg, "source": source, "wer": round(w, 4), "cer": round(c, 4),
+                         "numeric_recall": numeric_recall(ref, hyp),
+                         "ref_words": len(ref.split()), "hyp_words": len(hyp.split())})
+    return rows
+
+
 def mean(xs: list[float]) -> float | None:
     xs = [x for x in xs if x is not None]
     return round(sum(xs) / len(xs), 4) if xs else None
@@ -222,6 +247,11 @@ def main() -> None:
     ap.add_argument("--docling", default="data/docling")
     ap.add_argument("--tables", default="data/tables")
     ap.add_argument("--out", default="reports")
+    ap.add_argument("--fixtures-gt", default="none", help="fixture answer keys (off by default)")
+    ap.add_argument("--fixtures-parsed", default="none")
+    ap.add_argument("--fixtures-layout", default="none")
+    ap.add_argument("--fixtures-docling", default="none")
+    ap.add_argument("--fixture-strata", default="scanned,multicolumn")
     args = ap.parse_args()
 
     gt = Path(args.gt)
@@ -234,19 +264,16 @@ def main() -> None:
                  for r in csv.DictReader(f)]
 
     # ---- text
-    page_rows = []
-    for pg in pages:
-        ref_path = gt / "text" / f"{pg['stem']}_p{pg['page']:04d}.txt"
-        if not ref_path.exists():
-            print(f"[WARN] no ground truth text for {ref_path.name}, skipped")
-            continue
-        ref = normalize_text(ref_path.read_text(encoding="utf-8"))
-        for source, hyp_raw in read_text_sources(pg["stem"], pg["page"], dirs).items():
-            hyp = normalize_text(hyp_raw)
-            w, c = wer_cer(ref, hyp)
-            page_rows.append({**pg, "source": source, "wer": round(w, 4), "cer": round(c, 4),
-                              "numeric_recall": numeric_recall(ref, hyp),
-                              "ref_words": len(ref.split()), "hyp_words": len(hyp.split())})
+    page_rows = score_text_pages(gt, pages, dirs)
+    fx_gt = opt_dir(args.fixtures_gt)
+    if fx_gt:
+        keep = {x.strip() for x in args.fixture_strata.split(",") if x.strip()}
+        with open(Path(fx_gt) / "pages.csv", encoding="utf-8", newline="") as f:
+            fx_pages = [{"stem": r["stem"], "page": int(r["page"]), "stratum": r["stratum"]}
+                        for r in csv.DictReader(f) if r["stratum"] in keep]
+        fx_dirs = {"parsed": opt_dir(args.fixtures_parsed), "layout": opt_dir(args.fixtures_layout),
+                   "docling": opt_dir(args.fixtures_docling)}
+        page_rows += [{**r, "source_set": "fixture"} for r in score_text_pages(Path(fx_gt), fx_pages, fx_dirs)]
 
     # ---- tables
     table_rows, agreement = [], []

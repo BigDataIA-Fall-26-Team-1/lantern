@@ -32,6 +32,9 @@ KNOWN = {
                         "data-handling questions."),
     "eval.md": ("Part 9 · Evaluation", "Evaluation report",
                 "Text and table accuracy for both parsing paths, and the regression tests."),
+    "ground_truth_conventions.md": ("Part 9 · Evaluation", "Ground truth conventions",
+                                    "How the ground-truth pages and tables were transcribed: "
+                                    "dashes, negatives, footnote markers and line breaks."),
     "metrics.json": ("Part 9 · Evaluation", "Pipeline metrics",
                      "The metrics file written by the evaluate stage (what dvc metrics show reads)."),
     "benchmarks.md": ("Part 10 · Benchmarks", "Cost and throughput benchmarks",

@@ -1,0 +1,20 @@
+..Fs                                                                     [100%]
+=================================== FAILURES ===================================
+______________________________ test_table_cell_f1 ______________________________
+
+metrics = {'text': {'pdfplumber': {'wer': 0.0227, 'cer': 0.0168, 'numeric_recall': 1.0, 'pages': 1}}, 'text_by_stratum': {'state...cer': 0.0168, 'pages': 1}}}, 'tables': {'traditional': {'precision': 0.0, 'recall': 0.0, 'f1': 0.0, 'tables': 1, ...}}}
+thresholds = {'statement_max_wer': 0.05, 'min_numeric_recall': 0.98, 'table_min_f1': 0.98}
+
+    def test_table_cell_f1(metrics, thresholds):
+        tables = metrics.get("tables", {}).get("traditional")
+        if not tables:
+            pytest.skip("no fixture table ground truth yet")
+>       assert tables["f1"] >= thresholds["table_min_f1"], (
+            f"table cell F1 {tables['f1']:.4f} is below {thresholds['table_min_f1']}")
+E       AssertionError: table cell F1 0.0000 is below 0.98
+E       assert 0.0 >= 0.98
+
+tests/test_quality.py:82: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_quality.py::test_table_cell_f1 - AssertionError: table cell...
+1 failed, 2 passed, 1 skipped in 18.73s

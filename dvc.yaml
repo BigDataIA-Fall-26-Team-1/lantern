@@ -95,3 +95,68 @@ stages:
       - managed
     outs:
       - data/export
+
+  xbrl:
+    cmd: python src/xbrl.py
+    deps:
+      - src/xbrl.py
+      - src/evaluate.py
+      - src/tables.py
+      - config/label_map.yaml
+      - data/raw
+      - data/rendered
+      - data/tables
+      - data/docling
+      - data/parsed
+    params:
+      - xbrl
+      - tables
+    outs:
+      - data/xbrl
+
+  evaluate:
+    cmd: >-
+      python src/evaluate.py --out reports
+      --fixtures-gt tests/fixtures/gt --fixtures-parsed data/fixtures/parsed
+      --fixtures-layout data/fixtures/layout --fixtures-docling data/fixtures/docling
+    deps:
+      - src/evaluate.py
+      - src/tables.py
+      - data/ground_truth
+      - data/parsed
+      - data/layout
+      - data/docling
+      - data/tables
+      - tests/fixtures/gt
+      - data/fixtures
+    metrics:
+      - reports/metrics.json:
+          cache: false
+    outs:
+      - reports/eval_pages.csv:
+          cache: false
+      - reports/eval_tables.csv:
+          cache: false
+
+  parse_fixtures:
+    cmd: >-
+      python src/parse_text.py --input tests/fixtures --output data/fixtures/parsed &&
+      python src/layout.py --input tests/fixtures --output data/fixtures/layout --figures data/fixtures/figures &&
+      python -m src.docling_parse --input tests/fixtures --output data/fixtures/docling --raw tests/fixtures/no_raw --manifest tests/fixtures/manifest_fixtures.csv
+    deps:
+      - src/parse_text.py
+      - src/layout.py
+      - src/tables.py
+      - src/docling_parse.py
+      - tests/fixtures/scanned.pdf
+      - tests/fixtures/multicol.pdf
+      - tests/fixtures/statement.pdf
+      - tests/fixtures/manifest_fixtures.csv
+    params:
+      - text
+      - ocr
+      - layout
+      - tables
+      - docling
+    outs:
+      - data/fixtures

@@ -1,0 +1,14 @@
+{
+  "text_snap_pt = 0": {
+    "blocks": 1796,
+    "median_words": 8,
+    "share_under_5_words": 0.3497,
+    "total_words": 61375
+  },
+  "text_snap_pt = 15": {
+    "blocks": 1705,
+    "median_words": 9,
+    "share_under_5_words": 0.3155,
+    "total_words": 61423
+  }
+}
