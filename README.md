@@ -33,7 +33,7 @@ The app is a read-only viewer over the pipeline outputs. It runs no pipeline sta
 
 ## Architecture Diagram
 
-![Architecture diagram](docs/images/architecture.png)
+<img src="docs/images/architecture.png" width="600">
 
 ## Reproduction Steps
 
