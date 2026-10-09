@@ -29,8 +29,8 @@ st.dataframe(view[cols].astype(str), hide_index=True)
 def hit_label(i):
     x = hits[i]
     where = f"{x['stem']} · " if scope == "(all)" else ""
-    return (f"{where}Page {x['page']} · {x['block_type']} · "
-            f"{x.get('context') or '(no heading on page)'}")
+    heading = x.get("context") or f"{x['block_type']} on page {x['page']}"
+    return f"{where}{heading} ({x['block_type'].lower()})"
 
 
 h = hits[st.selectbox("Trace this hit", range(len(hits)), format_func=hit_label,
