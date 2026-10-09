@@ -94,17 +94,19 @@ The `parse_pdfplumber` stage reads every rendered PDF page by page. For each pag
 |---|---|
 | `data/parsed/{stem}_p{NNNN}.txt` | Text of one page |
 | `data/parsed/{stem}.words.jsonl` | One word per line with `bbox` in PDF points, top-left origin |
-| `data/parsed/ocr_log.csv` | One row per OCR decision: document, page, trigger reason, engine, mean confidence |
+| `data/parsed/ocr_log.csv` | One row per page: document, page, triggered, reason, engine, mean confidence, and the three signal values |
 
 ### The OCR trigger
 
-A page goes to Tesseract when at least one of two signals fires: too few characters, or too many junk tokens such as `(cid:NN)`. Both thresholds and the OCR resolution live in `params.yaml`:
+The trigger checks three signals on every page: the character count, the share of junk tokens such as `(cid:NN)`, and how much of the page is covered by images. The `reason` column in the log records which signals fired. All thresholds, the OCR resolution and the Tesseract settings live in `params.yaml`:
 
 ```yaml
 ocr:
   min_chars: 50
   junk_ratio: 0.3
   dpi: 300
+  image_coverage: 0.6
+  tesseract_config: "--oem 1 --psm 6"
 ```
 
 Tesseract returns boxes in pixels. The stage converts them back to points (`pt = px * 72 / dpi`) so OCR words and pdfplumber words use the same coordinates.
@@ -117,7 +119,7 @@ On the full corpus:
 dvc repro parse_pdfplumber
 ```
 
-On the committed fixtures only (this is what CI runs):
+On the committed fixtures only (the same command CI runs):
 
 ```bash
 python src/parse_text.py --input tests/fixtures --output /tmp/parsed_fixtures
@@ -125,24 +127,41 @@ python src/parse_text.py --input tests/fixtures --output /tmp/parsed_fixtures
 
 ### Check the results
 
+Every page has a `.txt` file:
+
 ```bash
-# one .txt per page
+pdfinfo data/rendered/AAPL_10K_20250927.pdf | grep Pages
 ls data/parsed/AAPL_10K_20250927_p*.txt | wc -l
-
-# a word record
-head -n 1 data/parsed/AAPL_10K_20250927.words.jsonl
-
-# OCR decisions
-column -s, -t < data/parsed/ocr_log.csv | head
 ```
 
-TODO: results.
+| Filing | PDF pages | `.txt` files | Pages sent to OCR |
+|---|---|---|---|
+| AAPL_10K_20250927 | 61 | 61 | 0 |
+| AAPL_10K_20240928 | 60 | 60 | 0 |
 
-- Pages per filing and `.txt` files per filing (should be equal)
-- OCR pages on the scanned fixture: all of them, with mean confidence
-- OCR pages on the rendered filings (expected: none, or the log explains why)
+A word record from `words.jsonl`:
 
-![OCR log for the scanned fixture](img/p1-ocr-log.png)
+```json
+{"doc_id": "0000320193-25-000079", "stem": "AAPL_10K_20250927", "page": 1, "text": "UNITED", "bbox": [255.33, 67.76, 303.71, 80.75], "units": "pt", "origin": "top-left", "source": "pdfplumber", "ocr": false, "conf": null}
+```
+
+The OCR log for the fixtures (the `sed` fills empty cells so `column` keeps them aligned):
+
+```bash
+sed 's/,,/,-,/g' /tmp/parsed_fixtures/ocr_log.csv | column -s, -t
+```
+
+| Fixture | Page | Triggered | Reason | Engine | Mean conf | Text chars |
+|---|---|---|---|---|---|---|
+| scanned | 1 | True | low_chars; image_coverage | tesseract | 95.4 | 3,808 |
+| scanned | 2 | True | low_chars; image_coverage | tesseract | 95.7 | 6,108 |
+| scanned | 3 | True | low_chars; image_coverage | tesseract | 95.5 | 4,565 |
+| statement | 1 | False | none | pdfplumber | n/a | 1,194 |
+| multicol | 1 | False | none | pdfplumber | n/a | 3,846 |
+
+The scanned fixture has no text layer (0 characters, full-page image), so every page goes to Tesseract and comes back with non-empty text. The born-digital fixtures and all 121 pages of the two filings stay on pdfplumber.
+
+![OCR log for the fixtures](img/p1-ocr-log.png)
 
 ![Scanned fixture page and its OCR text](img/p1-scanned-fixture.png)
 

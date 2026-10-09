@@ -1,0 +1,455 @@
+
+<!doctype html>
+
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1.0, user-scalable=yes">
+  <meta name="theme-color" content="#4F7DC9">
+  <meta charset="UTF-8">
+  <title>Project LANTERN: Parsing SEC Filings into a Traceable Corpus</title>
+  <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Source+Code+Pro:400|Roboto:400,300,400italic,500,700|Roboto+Mono">
+  <link rel="stylesheet" href="//fonts.googleapis.com/icon?family=Material+Icons">
+  <link rel="stylesheet" href="https://storage.googleapis.com/claat-public/codelab-elements.css">
+  <style>
+    .success {
+      color: #1e8e3e;
+    }
+    .error {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <google-codelab-analytics gaid="UA-49880327-14" ga4id=""></google-codelab-analytics>
+  <google-codelab codelab-gaid=""
+                  codelab-ga4id=""
+                  id="lantern-case-study-1"
+                  title="Project LANTERN: Parsing SEC Filings into a Traceable Corpus"
+                  environment="web"
+                  feedback-link="">
+    
+      <google-codelab-step label="Overview" duration="3">
+        <p>FinTrust Analytics wants every number in an analyst memo to point back to a page and a bounding box in the source filing. Project LANTERN builds that corpus: it downloads two Apple (AAPL) 10-K filings (FY2024 and FY2025) from EDGAR, renders them to PDF, extracts text, tables and layout, attaches provenance, checks the numbers against the filing&#39;s own XBRL, and versions every artifact with DVC.</p>
+<h2 is-upgraded>What you will build</h2>
+<ul>
+<li>A DVC pipeline with the stages <code>download</code>, <code>render</code>, <code>parse_pdfplumber</code>, <code>tables</code>, <code>layout</code>, <code>parse_docling</code>, <code>export</code>, <code>xbrl</code>, <code>evaluate</code></li>
+<li>A provenance-tagged JSONL corpus plus section Markdown</li>
+<li>Evaluation metrics, benchmarks, an XBRL validation report and a build-vs-buy recommendation</li>
+</ul>
+<h2 is-upgraded>Architecture</h2>
+<p>TODO: add the architecture diagram image.</p>
+<p class="image-container"><img alt="LANTERN architecture" src="img/f2eaea242fe1e15a.png"></p>
+<h2 is-upgraded>Team</h2>
+<p>TODO: names and the Parts each member owned.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Setup and reproduction" duration="10">
+        <h2 is-upgraded>Prerequisites</h2>
+<ul>
+<li>Python 3.11</li>
+<li>System packages: Tesseract, Poppler (and Ghostscript if Camelot asks for it)</li>
+<li>Chromium for Playwright (only needed if you re-run the <code>render</code> stage)</li>
+</ul>
+<p>macOS:</p>
+<pre><code language="language-bash" class="language-bash">brew install tesseract poppler
+</code></pre>
+<p>Ubuntu / WSL:</p>
+<pre><code language="language-bash" class="language-bash">sudo apt-get install -y tesseract-ocr poppler-utils
+</code></pre>
+<h2 is-upgraded>Reproduce the corpus</h2>
+<p>These are the exact commands from the brief&#39;s reproducibility contract:</p>
+<pre><code language="language-bash" class="language-bash">git clone &lt;repo-url&gt; lantern &amp;&amp; cd lantern
+git checkout submission
+python -m venv .venv &amp;&amp; source .venv/bin/activate
+pip install -r requirements.txt
+dvc pull
+dvc repro
+dvc metrics show
+pytest -q
+</code></pre>
+<p><code>dvc pull</code> reads from the S3 remote documented in the README (read-only, no credentials needed). After a pull, <code>dvc repro</code> skips every stage, because every output already matches <code>dvc.lock</code>.</p>
+<p>TODO: screenshot of <code>dvc repro</code> showing every stage skipped.</p>
+<p class="image-container"><img alt="dvc repro skipping stages" src="img/f2eaea242fe1e15a.png"></p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 0: Download and render" duration="5">
+        <p>TODO (owner): fill in. Checklist from the brief:</p>
+<ul>
+<li><code>src/download.py</code>: filings from <code>params.yaml</code> with <code>download_details=True</code>, <code>full-submission.txt</code> unpacked into <code>unpacked/</code></li>
+<li><code>src/render.py</code>: <code>data/rendered/{TICKER}_{FORM}_{PERIOD}.pdf</code> and <code>data/rendered/manifest.csv</code></li>
+<li>The three fixtures in <code>tests/fixtures/</code> (scanned, statement, multi-column from another filing, documented in <code>tests/fixtures/README.md</code>)</li>
+<li>Commands: <code>dvc repro download</code>, <code>dvc repro render</code></li>
+<li>Results: page count and MB per filing, <code>data/raw</code> size under 100 MB</li>
+<li>Screenshot: one rendered page, <code>manifest.csv</code></li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 1: Text extraction with OCR fallback" duration="8">
+        <p>The <code>parse_pdfplumber</code> stage reads every rendered PDF page by page. For each page it saves the text, saves every word with its bounding box, and decides whether the page needs OCR.</p>
+<h2 is-upgraded>What the stage writes</h2>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Output</p>
+</td><td colspan="1" rowspan="1"><p>Contents</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>data/parsed/{stem}_p{NNNN}.txt</code></p>
+</td><td colspan="1" rowspan="1"><p>Text of one page</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>data/parsed/{stem}.words.jsonl</code></p>
+</td><td colspan="1" rowspan="1"><p>One word per line with <code>bbox</code> in PDF points, top-left origin</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>data/parsed/ocr_log.csv</code></p>
+</td><td colspan="1" rowspan="1"><p>One row per page: document, page, triggered, reason, engine, mean confidence, and the three signal values</p>
+</td></tr>
+</table>
+<h2 is-upgraded>The OCR trigger</h2>
+<p>The trigger checks three signals on every page: the character count, the share of junk tokens such as <code>(cid:NN)</code>, and how much of the page is covered by images. The <code>reason</code> column in the log records which signals fired. All thresholds, the OCR resolution and the Tesseract settings live in <code>params.yaml</code>:</p>
+<pre><code language="language-yaml" class="language-yaml">ocr:
+  min_chars: 50
+  junk_ratio: 0.3
+  dpi: 300
+  image_coverage: 0.6
+  tesseract_config: &#34;--oem 1 --psm 6&#34;
+</code></pre>
+<p>Tesseract returns boxes in pixels. The stage converts them back to points (<code>pt = px * 72 / dpi</code>) so OCR words and pdfplumber words use the same coordinates.</p>
+<h2 is-upgraded>Run it</h2>
+<p>On the full corpus:</p>
+<pre><code language="language-bash" class="language-bash">dvc repro parse_pdfplumber
+</code></pre>
+<p>On the committed fixtures only (the same command CI runs):</p>
+<pre><code language="language-bash" class="language-bash">python src/parse_text.py --input tests/fixtures --output /tmp/parsed_fixtures
+</code></pre>
+<h2 is-upgraded>Check the results</h2>
+<p>Every page has a <code>.txt</code> file:</p>
+<pre><code language="language-bash" class="language-bash">pdfinfo data/rendered/AAPL_10K_20250927.pdf | grep Pages
+ls data/parsed/AAPL_10K_20250927_p*.txt | wc -l
+</code></pre>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Filing</p>
+</td><td colspan="1" rowspan="1"><p>PDF pages</p>
+</td><td colspan="1" rowspan="1"><p><code>.txt</code> files</p>
+</td><td colspan="1" rowspan="1"><p>Pages sent to OCR</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>AAPL_10K_20250927</p>
+</td><td colspan="1" rowspan="1"><p>61</p>
+</td><td colspan="1" rowspan="1"><p>61</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>AAPL_10K_20240928</p>
+</td><td colspan="1" rowspan="1"><p>60</p>
+</td><td colspan="1" rowspan="1"><p>60</p>
+</td><td colspan="1" rowspan="1"><p>0</p>
+</td></tr>
+</table>
+<p>A word record from <code>words.jsonl</code>:</p>
+<pre><code language="language-json" class="language-json">{&#34;doc_id&#34;: &#34;0000320193-25-000079&#34;, &#34;stem&#34;: &#34;AAPL_10K_20250927&#34;, &#34;page&#34;: 1, &#34;text&#34;: &#34;UNITED&#34;, &#34;bbox&#34;: [255.33, 67.76, 303.71, 80.75], &#34;units&#34;: &#34;pt&#34;, &#34;origin&#34;: &#34;top-left&#34;, &#34;source&#34;: &#34;pdfplumber&#34;, &#34;ocr&#34;: false, &#34;conf&#34;: null}
+</code></pre>
+<p>The OCR log for the fixtures (the <code>sed</code> fills empty cells so <code>column</code> keeps them aligned):</p>
+<pre><code language="language-bash" class="language-bash">sed &#39;s/,,/,-,/g&#39; /tmp/parsed_fixtures/ocr_log.csv | column -s, -t
+</code></pre>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Fixture</p>
+</td><td colspan="1" rowspan="1"><p>Page</p>
+</td><td colspan="1" rowspan="1"><p>Triggered</p>
+</td><td colspan="1" rowspan="1"><p>Reason</p>
+</td><td colspan="1" rowspan="1"><p>Engine</p>
+</td><td colspan="1" rowspan="1"><p>Mean conf</p>
+</td><td colspan="1" rowspan="1"><p>Text chars</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>scanned</p>
+</td><td colspan="1" rowspan="1"><p>1</p>
+</td><td colspan="1" rowspan="1"><p>True</p>
+</td><td colspan="1" rowspan="1"><p>low_chars; image_coverage</p>
+</td><td colspan="1" rowspan="1"><p>tesseract</p>
+</td><td colspan="1" rowspan="1"><p>95.4</p>
+</td><td colspan="1" rowspan="1"><p>3,808</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>scanned</p>
+</td><td colspan="1" rowspan="1"><p>2</p>
+</td><td colspan="1" rowspan="1"><p>True</p>
+</td><td colspan="1" rowspan="1"><p>low_chars; image_coverage</p>
+</td><td colspan="1" rowspan="1"><p>tesseract</p>
+</td><td colspan="1" rowspan="1"><p>95.7</p>
+</td><td colspan="1" rowspan="1"><p>6,108</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>scanned</p>
+</td><td colspan="1" rowspan="1"><p>3</p>
+</td><td colspan="1" rowspan="1"><p>True</p>
+</td><td colspan="1" rowspan="1"><p>low_chars; image_coverage</p>
+</td><td colspan="1" rowspan="1"><p>tesseract</p>
+</td><td colspan="1" rowspan="1"><p>95.5</p>
+</td><td colspan="1" rowspan="1"><p>4,565</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>statement</p>
+</td><td colspan="1" rowspan="1"><p>1</p>
+</td><td colspan="1" rowspan="1"><p>False</p>
+</td><td colspan="1" rowspan="1"><p>none</p>
+</td><td colspan="1" rowspan="1"><p>pdfplumber</p>
+</td><td colspan="1" rowspan="1"><p>n/a</p>
+</td><td colspan="1" rowspan="1"><p>1,194</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p>multicol</p>
+</td><td colspan="1" rowspan="1"><p>1</p>
+</td><td colspan="1" rowspan="1"><p>False</p>
+</td><td colspan="1" rowspan="1"><p>none</p>
+</td><td colspan="1" rowspan="1"><p>pdfplumber</p>
+</td><td colspan="1" rowspan="1"><p>n/a</p>
+</td><td colspan="1" rowspan="1"><p>3,846</p>
+</td></tr>
+</table>
+<p>The scanned fixture has no text layer (0 characters, full-page image), so every page goes to Tesseract and comes back with non-empty text. The born-digital fixtures and all 121 pages of the two filings stay on pdfplumber.</p>
+<p class="image-container"><img alt="OCR log for the fixtures" src="img/af2fbd8573df2fe0.png"></p>
+<p class="image-container"><img alt="Scanned fixture page and its OCR text" src="img/5b018ebaaf381b60.png"></p>
+<aside class="special"><p> Rendered EDGAR PDFs almost never need OCR, so the scanned fixture is the only real test of the OCR path. That is why it is committed to Git and run in CI. </p>
+</aside>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 2: Tables and the hybrid extractor" duration="5">
+        <p>TODO (owner): fill in. Checklist from the brief:</p>
+<ul>
+<li>Bake-off on two or more statement pages: Camelot lattice, stream, network or hybrid, pdfplumber &#34;text&#34;; shape, parsing report, 10 hand-checked cells per method</li>
+<li><code>src/tables.py</code> hybrid extractor and its log of which method won</li>
+<li>Normalization: parentheses, dashes, currency, footnote markers, scale, per-share exception; raw and normalized cells</li>
+<li>Command: <code>dvc repro tables</code></li>
+<li>Results: bake-off table from <code>reports/tables_method.md</code></li>
+<li>Screenshot: a clean income statement CSV next to the PDF page</li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 3: Layout detection and routing" duration="5">
+        <p>TODO (owner): fill in. Checklist from the brief:</p>
+<ul>
+<li><code>data/layout/{stem}.blocks.jsonl</code>, figure crops in <code>data/figures/</code></li>
+<li>Routing, reading order, section attachment</li>
+<li>Command: <code>dvc repro layout</code> (or note if the stage is frozen, and why)</li>
+<li>Results: audit table from <code>reports/layout_audit.md</code></li>
+<li>Screenshot: one QA overlay from <code>reports/layout/</code></li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 4: Docling path and comparison" duration="5">
+        <p>TODO (owner): fill in. Checklist from the brief:</p>
+<ul>
+<li><code>src/docling_parse.py</code>, run as <code>python -m src.docling_parse</code></li>
+<li>Markdown, JSON, table CSVs, per-page Markdown for WER; HTML vs rendered-PDF comparison</li>
+<li>Command: <code>dvc repro parse_docling</code></li>
+<li>Results: comparison table and recommendation from <code>reports/docling_comparison.md</code> (WER, cell F1, XBRL match rate for both paths)</li>
+<li>Screenshot: one table, Docling vs traditional</li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 5: Metadata schema and provenance" duration="8">
+        <p>The <code>export</code> stage turns the traditional path&#39;s outputs (layout blocks routed through Parts 1 and 2) into one JSONL record per block, then rebuilds each section as Markdown.</p>
+<h2 is-upgraded>The schema</h2>
+<p><code>src/schema.py</code> defines the Appendix B schema as a pydantic model. Every record is validated when it is written, so a bad field fails the stage that produced it.</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Field</p>
+</td><td colspan="1" rowspan="1"><p>Example</p>
+</td><td colspan="1" rowspan="1"><p>Source</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>doc_id</code></p>
+</td><td colspan="1" rowspan="1"><p>accession number</p>
+</td><td colspan="1" rowspan="1"><p><code>manifest.csv</code></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>cik</code>, <code>ticker</code>, <code>form</code></p>
+</td><td colspan="1" rowspan="1"><p><code>0000320193</code>, <code>AAPL</code>, <code>10-K</code></p>
+</td><td colspan="1" rowspan="1"><p><code>manifest.csv</code></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>fiscal_year</code>, <code>fiscal_period</code></p>
+</td><td colspan="1" rowspan="1"><p><code>2025</code>, <code>FY</code></p>
+</td><td colspan="1" rowspan="1"><p><code>dei:DocumentFiscalYearFocus</code>, <code>dei:DocumentFiscalPeriodFocus</code></p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>page</code>, <code>block_id</code>, <code>block_type</code></p>
+</td><td colspan="1" rowspan="1"><p><code>45</code>, <code>p0045_b003</code>, <code>Table</code></p>
+</td><td colspan="1" rowspan="1"><p>layout stage</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>bbox</code>, <code>units</code>, <code>origin</code></p>
+</td><td colspan="1" rowspan="1"><p><code>[x0, top, x1, bottom]</code>, <code>pt</code>, <code>top-left</code></p>
+</td><td colspan="1" rowspan="1"><p>layout stage</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>section</code></p>
+</td><td colspan="1" rowspan="1"><p><code>Item 7</code></p>
+</td><td colspan="1" rowspan="1"><p>Item heading, else nearest Title</p>
+</td></tr>
+<tr><td colspan="1" rowspan="1"><p><code>table</code></p>
+</td><td colspan="1" rowspan="1"><p><code>{columns, rows, raw_cells, scale}</code></p>
+</td><td colspan="1" rowspan="1"><p>tables stage</p>
+</td></tr>
+<tr><td colspan="2" rowspan="1"><p><code>extractor</code>, <code>extractor_version</code>, <code>ocr</code>, <code>ocr_conf</code></p>
+</td><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>the stage that produced the text</p>
+</td></tr>
+<tr><td colspan="2" rowspan="1"><p><code>source_path</code>, <code>sha256</code></p>
+</td><td colspan="1" rowspan="1"></td><td colspan="1" rowspan="1"><p>the rendered PDF</p>
+</td></tr>
+</table>
+<h2 is-upgraded>Run it</h2>
+<pre><code language="language-bash" class="language-bash">dvc repro export
+</code></pre>
+<h2 is-upgraded>Check the results</h2>
+<p>One record, pretty-printed:</p>
+<pre><code language="language-bash" class="language-bash">head -n 1 data/export/AAPL_10K_20250927.jsonl | python -m json.tool
+</code></pre>
+<p>Keys are identical across documents (should print one set of keys):</p>
+<pre><code language="language-bash" class="language-bash">python -c &#34;import json,glob; print({tuple(sorted(json.loads(l))) for f in glob.glob(&#39;data/export/*.jsonl&#39;) for l in open(f)})&#34;
+</code></pre>
+<p>Provenance in the Markdown. Every block is preceded by an HTML comment with the document, page and block id, which a reader never sees but a chunker can keep:</p>
+<pre><code language="language-bash" class="language-bash">grep -n -A1 &#34;&lt;!--&#34; data/export/AAPL_10K_20250927.md | head
+</code></pre>
+<h2 is-upgraded>Trace one number</h2>
+<p>TODO: pick the net income line. Show the Markdown line, its comment, the matching JSONL record (page, bbox), and the highlighted box on the rendered page.</p>
+<p class="image-container"><img alt="JSONL record" src="img/f2eaea242fe1e15a.png"></p>
+<p class="image-container"><img alt="Markdown with provenance comments" src="img/f2eaea242fe1e15a.png"></p>
+<p class="image-container"><img alt="bbox highlighted on the rendered page" src="img/f2eaea242fe1e15a.png"></p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 6: Storage formats" duration="5">
+        <p>One filing is exported in three formats: JSONL and Markdown from Part 5, plus a plain-text baseline at <code>data/export/{stem}.txt</code>. Each was measured for size and approximate tokens (characters / 4), and the same three retrieval-style questions were asked of each in an LLM chat interface.</p>
+<h2 is-upgraded>Check the results</h2>
+<pre><code language="language-bash" class="language-bash">column -s, -t &lt; reports/format_stats.csv
+ls reports/format_test/
+</code></pre>
+<p>TODO: copy the numbers from <code>reports/format_stats.csv</code> and the answers from <code>reports/format_test/</code>.</p>
+<table>
+<tr><td colspan="1" rowspan="1"><p>Format</p>
+</td><td colspan="1" rowspan="1"><p>Size</p>
+</td><td colspan="1" rowspan="1"><p>Approx. tokens</p>
+</td><td colspan="1" rowspan="1"><p>Q1</p>
+</td><td colspan="1" rowspan="1"><p>Q2</p>
+</td><td colspan="1" rowspan="1"><p>Q3</p>
+</td></tr>
+<tr><td colspan="6" rowspan="1"><p>JSONL</p>
+</td><td colspan="5" rowspan="1"></td><td colspan="4" rowspan="1"></td><td colspan="3" rowspan="1"></td><td colspan="2" rowspan="1"></td><td colspan="1" rowspan="1"></td></tr>
+<tr><td colspan="6" rowspan="1"><p>Markdown</p>
+</td><td colspan="5" rowspan="1"></td><td colspan="4" rowspan="1"></td><td colspan="3" rowspan="1"></td><td colspan="2" rowspan="1"></td><td colspan="1" rowspan="1"></td></tr>
+<tr><td colspan="6" rowspan="1"><p>TXT</p>
+</td><td colspan="5" rowspan="1"></td><td colspan="4" rowspan="1"></td><td colspan="3" rowspan="1"></td><td colspan="2" rowspan="1"></td><td colspan="1" rowspan="1"></td></tr>
+</table>
+<p>TODO: the decision in two sentences, from <code>reports/format_decision.md</code>: which format is the source of truth, which feeds Case Study 2, and why.</p>
+<p class="image-container"><img alt="Question asked of the Markdown export" src="img/f2eaea242fe1e15a.png"></p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 7: Build vs buy with AWS Textract" duration="8">
+        <p>The same pages were sent through AWS Textract (<code>AnalyzeDocument</code> with <code>TABLES</code>): a clean statement page and a page from the scanned fixture, well under the 10-page limit. Textract&#39;s output was mapped into the Part 5 schema and compared cell by cell with the open-source output.</p>
+<h2 is-upgraded>The fallback</h2>
+<p>Textract is wired in as an optional fallback in <code>src/managed/</code>. It is used only when a page&#39;s OCR confidence or a table&#39;s score is low, and every response is cached by page hash in <code>data/managed/</code>.</p>
+<pre><code language="language-yaml" class="language-yaml">managed:
+  enabled: false
+  provider: textract
+</code></pre>
+<p>With <code>enabled: false</code> (the default) the code reads cache hits but never calls the API, so the pipeline runs without AWS credentials. The cache is a DVC-tracked folder, not a stage output:</p>
+<pre><code language="language-bash" class="language-bash">dvc add data/managed      # already done; creates data/managed.dvc
+dvc pull data/managed.dvc # graders get the cached responses
+dvc repro                 # succeeds with the fallback disabled
+</code></pre>
+<aside class="warning"><p> Live calls need AWS credentials in environment variables or an AWS profile, never in the repo. They use a separate IAM user with Textract permissions only, kept apart from the DVC remote user. A billing alert was set before the first call. </p>
+</aside>
+<h2 is-upgraded>Check the results</h2>
+<p>TODO: results from <code>reports/managed/</code> and <code>reports/build_vs_buy.md</code>.</p>
+<ul>
+<li>Side-by-side: one page of text and one table, Textract vs open source; which errors Textract fixed and which it introduced</li>
+<li>Price per 1,000 pages from the AWS public pricing page (date checked), cost for this corpus and for 5,000 filings a year</li>
+<li>Data-handling questions for client documents: region, retention, training use</li>
+<li>Recommendation: whether and where to use a managed service</li>
+</ul>
+<p class="image-container"><img alt="Textract vs open source, one table" src="img/f2eaea242fe1e15a.png"></p>
+<p class="image-container"><img alt="Cache hit with managed.enabled false" src="img/f2eaea242fe1e15a.png"></p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 8: DVC pipeline and CI" duration="5">
+        <p>TODO (owner): fill in. Checklist from the brief:</p>
+<ul>
+<li><code>dvc.yaml</code> with all nine canonical stages, <code>dvc.lock</code> committed, <code>dvc dag</code> output</li>
+<li>A second <code>dvc repro</code> skips every stage</li>
+<li><code>.github/workflows/smoke.yml</code>: what it installs and runs; screenshot of a green PR run</li>
+<li>Frozen stages, if any, and why</li>
+</ul>
+<h2 is-upgraded>DVC remote access</h2>
+<p>TODO (Preksha): remote type (S3, us-east-2), how read-only access works without credentials, and the exact <code>dvc remote</code> config graders will see. Keep it consistent with the README section.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 9: Evaluation and regression tests" duration="5">
+        <p>TODO (owner): fill in. Checklist from the brief:</p>
+<ul>
+<li>Ground truth: 10 pages per filing across strata, two statement CSVs, conventions</li>
+<li>WER and CER per page and stratum, numeric-token accuracy, cell P/R/F1, both paths</li>
+<li>Command: <code>dvc repro evaluate</code>, <code>dvc metrics show</code>, <code>dvc metrics diff</code></li>
+<li>The documented failing test run</li>
+<li>Screenshot: <code>reports/plots/drift.png</code></li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 10: Cost and throughput" duration="5">
+        <p>TODO (owner): fill in. Checklist from the brief:</p>
+<ul>
+<li>Batch of 50 to 100 pages per stage: s/page p50 and p95, peak RSS, failures, cold vs warm</li>
+<li>Cost per 1,000 pages and for 5,000 filings a year, open source vs managed, with assumptions</li>
+<li>Bottleneck stages and hardware recommendation; machine specs</li>
+<li>Results: table from <code>reports/benchmarks.md</code></li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Part 11: XBRL extraction and validation" duration="5">
+        <p>TODO (owner): fill in. Checklist from the brief:</p>
+<ul>
+<li><code>src/xbrl.py</code> with Arelle, <code>data/xbrl/facts.csv</code>, <code>config/label_map.yaml</code></li>
+<li>Mapping method per line (manual, label, fuzzy)</li>
+<li>Match rate per statement and per path (traditional and Docling)</li>
+<li>Every non-match with its diagnosed cause and fix, from <code>reports/xbrl.md</code></li>
+<li>Screenshot: the notebook comparison table</li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Summary and recommendations" duration="3">
+        <p>TODO: one short paragraph each, using numbers from the reports:</p>
+<ul>
+<li>Primary parsing path and fallback (Part 4)</li>
+<li>Source-of-truth format and the format for Case Study 2 (Part 6)</li>
+<li>Build vs buy (Parts 7 and 10)</li>
+</ul>
+<h2 is-upgraded>Links</h2>
+<ul>
+<li>Repository: TODO</li>
+<li>Demo video: TODO</li>
+<li>Deployed app: TODO</li>
+</ul>
+
+
+      </google-codelab-step>
+    
+  </google-codelab>
+
+  <script src="https://storage.googleapis.com/claat-public/native-shim.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/custom-elements.min.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/prettify.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/codelab-elements.js"></script>
+  <script src="//support.google.com/inapp/api.js"></script>
+
+</body>
+</html>
