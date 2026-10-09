@@ -25,7 +25,7 @@ Every number here comes from a file in the repo: `reports/metrics.json` (Part 9)
 | Table structure | cell precision / recall / F1, 2 tables, 111 cells (Part 9) | 1.00 / 1.00 / **1.00** | 1.00 / 1.00 / **1.00** | Tie |
 | Numeric fidelity (statements) | XBRL match rate, 4 statements × 2 filings (Part 11) | **456 / 456 (100%)** | 450 / 450 (100%) | Traditional (coverage) |
 | Reading order | WER on cover pages, 2 pages (Part 9) | 3.74% pdfplumber, 59.87% layout-routed | **6.90%** | See §3 |
-| Footnotes | label counts in `items.jsonl` | no footnote label in Part 1/2 output | labelled separately (`footnote`, `caption`) | Docling |
+| Footnotes | label counts in `data/export/*.jsonl` and `data/docling/*.items.jsonl`, plus a manual check of the PDFs | 0 `Footnote` blocks | 0 `footnote` / `caption` items | N/A: our filings have no footnotes |
 | Provenance | page + bbox per record | per word (Part 1) and per block (Part 3) | per item, built in | Tie |
 | Throughput | s/page p50 / p95 (Part 10) | **0.70 / 3.49** (full path) | 4.52 / 19.22 | Traditional |
 | Memory | peak RSS (Part 10) | **1,055 MiB** (layout) | 3,597 MiB | Traditional |
@@ -58,9 +58,11 @@ filings: TableFormer merged it into the column header (`Years ended.September 27
 2025 $ 29,943` in `AAPL_10K_20250927_pdf_p0036_t00.csv`), so 6 numbers never became
 data cells. The traditional path extracted that row.
 
-**Footnotes.** Docling labels footnotes and captions as separate items, so they can be
-kept out of body text. The traditional path has no footnote label; footnote text stays
-in the page text and in table cells unless Part 2's normalizer strips the marker.
+**Footnotes.** Our filings have no footnotes (manual check of the rendered PDFs), so this
+dimension cannot separate the two paths. Both report zero: the traditional export has
+0 `Footnote` blocks, although the schema supports that type, and Docling's `items.jsonl`
+has 0 `footnote` and 0 `caption` items in both filings. Testing it would need a filing
+that has footnotes.
 
 **Provenance.** Both paths can trace every record to a page and a bbox. Docling gives this
 per item out of the box; the traditional path builds it per word (Part 1) and per block
@@ -69,7 +71,7 @@ per item out of the box; the traditional path builds it per word (Part 1) and pe
 **Throughput.** Docling is about 6.5× slower than the whole traditional path at the median
 (4.52 vs 0.70 s/page) and needs 3.4× the memory. Its time is concentrated on table-heavy
 pages (statements and notes, pages 32–51), which is TableFormer on the CPU. Full-filing
-runs in `data/docling/timing.csv` took 380–966 s per filing, depending on machine load.
+runs in `data/docling/timing.csv` took 965.9 s (FY2024) and 652.5 s (FY2025).
 
 ## 4. PDF vs HTML (what rendering changed)
 
@@ -78,7 +80,7 @@ The same filing (FY2024) converted from the original iXBRL HTML and from the ren
 | | Rendered PDF | iXBRL HTML |
 |---|---|---|
 | Tables found | 51 | 63 |
-| Conversion time | 380–966 s | 39–97 s |
+| Conversion time (`timing.csv`) | 965.9 s | 96.8 s |
 | Pages / bbox | yes (60 pages) | none |
 
 - **Tables:** HTML yields 12 more tables. In the PDF, some small tables are split across
@@ -99,17 +101,18 @@ and the highest numeric recall (99.5% vs 87.4%), it matched XBRL on all 456 stat
 numbers including a cash flow row Docling dropped, and it costs about 6× less compute
 ($5.63 vs $36.35 a year at 5,000 filings). Use **Docling as the fallback** where the
 traditional path is weak: pages with side-by-side layout (Docling's cover-page WER is
-6.9% vs 59.9% for our layout-routed text), footnote separation, and as an independent
-second reading of statement tables, where the two paths agreed cell for cell (F1 1.0 on
-both). Both paths are already DVC stages, so switching costs nothing; Docling should run
-one worker per 8 GiB machine because of its 3.6 GiB peak memory.
+6.9% vs 59.9% for our layout-routed text), and as an independent second reading of
+statement tables, where the two paths agreed cell for cell (F1 1.0 on both). Both paths
+are already DVC stages, so switching costs nothing; Docling should run one worker per
+8 GiB machine because of its 3.6 GiB peak memory.
 
 ## 6. Limitations
 
 - Ground truth is 16 pages and 2 tables (Part 9); a small sample.
 - No true multi-column prose page exists in our filings, so reading order is judged on
   the cover page only.
+- Our filings have no footnotes, so footnote handling could not be compared.
 - Docling was run CPU-only; a GPU would change throughput but was not measured.
 - HTML conversion was done for one filing (FY2024).
-- Timing varied between runs on the same laptop (380–966 s per filing); Part 10's
-  benchmark numbers are the controlled figures.
+- Docling timings in `timing.csv` (652.5–965.9 s per filing) are single runs on a laptop
+  under varying load; Part 10's benchmark numbers are the controlled figures.
