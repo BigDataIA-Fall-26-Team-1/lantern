@@ -413,3 +413,106 @@ stages:
       md5: aa8284213004dae01822b3b4f47ade41.dir
       size: 2519189
       nfiles: 7
+  xbrl:
+    cmd: python src/xbrl.py
+    deps:
+    - path: config/label_map.yaml
+      hash: md5
+      md5: fbdf3f4563e96dff38d9e18ae10bcc5f
+      size: 3502
+    - path: data/docling
+      hash: md5
+      md5: 5ef741e98343e47fa46ca455e8c02d01.dir
+      size: 18766220
+      nfiles: 294
+    - path: data/parsed
+      hash: md5
+      md5: 60d480cc629c17622fdf54c1c5bd3132.dir
+      size: 14171803
+      nfiles: 125
+    - path: data/raw
+      hash: md5
+      md5: 9f9f4e754120a177f3fd21d3b586085b.dir
+      size: 37348782
+      nfiles: 181
+    - path: data/rendered
+      hash: md5
+      md5: aeecdd5e3b8417e02d7a02b5615fa96f.dir
+      size: 1106429
+      nfiles: 3
+    - path: data/tables
+      hash: md5
+      md5: 97bd0b285c54dc5e3fff61c9c742c97a.dir
+      size: 40732
+      nfiles: 22
+    - path: src/evaluate.py
+      hash: md5
+      md5: cf76c85f535ecf1217a853598f501059
+      size: 13714
+    - path: src/tables.py
+      hash: md5
+      md5: 17a13a09cd299b5d9b958c1445bb3803
+      size: 21383
+    - path: src/xbrl.py
+      hash: md5
+      md5: 88aceb4a5480f35107d2751870e27017
+      size: 18276
+    params:
+      params.yaml:
+        tables:
+          min_rulings: 6
+          accept_score: 80
+          statements:
+            income:
+            - CONSOLIDATED STATEMENTS OF OPERATIONS
+            comprehensive_income:
+            - CONSOLIDATED STATEMENTS OF COMPREHENSIVE INCOME
+            balance:
+            - CONSOLIDATED BALANCE SHEETS
+            equity:
+            - CONSOLIDATED STATEMENTS OF SHAREHOLDERS
+            cash_flows:
+            - CONSOLIDATED STATEMENTS OF CASH FLOWS
+          title_top_lines: 6
+          min_numeric_tokens: 20
+          title_max_extra_chars: 15
+          rule_min_len_pt: 100
+          order_ruled:
+          - lattice
+          - network
+          - stream
+          order_borderless:
+          - stream
+          - network
+          - lattice
+          whitespace_weight: 0.5
+          min_rows: 5
+          min_cols: 3
+          min_coverage: 0.5
+          max_label_merge: 0.2
+          bakeoff_flavors:
+          - lattice
+          - stream
+          - network
+          - hybrid
+          run_bakeoff: true
+          scale_words:
+            thousands: 1000
+            millions: 1000000
+            billions: 1000000000
+          shares_pattern: shares used|weighted.average.*shares|number of shares
+          per_share_pattern: per share|per-share
+        xbrl:
+          label_map: config/label_map.yaml
+          fuzzy_cutoff: 0.88
+          statements:
+          - income
+          - comprehensive_income
+          - balance
+          - cash_flows
+    outs:
+    - path: data/xbrl
+      hash: md5
+      md5: 7eb20270ba95aebe0293203d0eb0c8c4.dir
+      size: 497671
+      nfiles: 3
